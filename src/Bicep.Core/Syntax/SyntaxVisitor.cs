@@ -45,7 +45,7 @@ namespace Bicep.Core.Syntax
             foreach (var (item, token) in syntax.GetPairedElements())
             {
                 this.Visit(item);
-                this.VisitToken(token);
+                this.Visit(token);
             }
         }
 
