@@ -31,6 +31,12 @@ namespace Bicep.Core.Semantics
         private readonly Lazy<EmitLimitationInfo> emitLimitationInfoLazy;
         private readonly Lazy<SymbolHierarchy> symbolHierarchyLazy;
         private readonly Lazy<ResourceAncestorGraph> resourceAncestorsLazy;
+        private readonly Lazy<(
+            ImmutableDictionary<DeclaredResourceMetadata, ScopeHelper.ScopeData> scopeData,
+            IReadOnlyList<IDiagnostic> diagnostics)> resourceScopeDataLazy;
+        private readonly Lazy<(
+            ImmutableDictionary<ModuleSymbol, ScopeHelper.ScopeData> scopeData,
+            IReadOnlyList<IDiagnostic> diagnostics)> moduleScopeDataLazy;
         private readonly Lazy<ImmutableSortedDictionary<string, ParameterMetadata>> parametersLazy;
         private readonly Lazy<ImmutableSortedDictionary<string, ExtensionMetadata>> extensionsLazy;
         private readonly Lazy<ImmutableSortedDictionary<string, ExportMetadata>> exportsLazy;
@@ -38,10 +44,16 @@ namespace Bicep.Core.Semantics
         private readonly Lazy<IApiVersionProvider> apiVersionProviderLazy;
         private readonly Lazy<EmitterSettings> emitterSettingsLazy;
         private readonly Lazy<ImportClosureInfo> importClosureInfoLazy;
+        private readonly Lazy<InlineDependencyVisitor.SymbolsToInline> symbolsToInlineLazy;
 
         // needed to support param file go to def
         private readonly Lazy<ImmutableDictionary<ParameterAssignmentSymbol, ParameterMetadata?>> declarationsByAssignment;
         private readonly Lazy<ImmutableDictionary<ParameterMetadata, ParameterAssignmentSymbol?>> assignmentsByDeclaration;
+
+        private readonly Lazy<ImmutableDictionary<ExtensionConfigAssignmentSymbol, ExtensionMetadata?>> extensionDeclarationsByExtensionConfigAssignment;
+        private readonly Lazy<ImmutableDictionary<ExtensionMetadata, ExtensionConfigAssignmentSymbol?>> extensionConfigAssignmentsByDeclaration;
+
+        private readonly Lazy<(ExternalInputReferences references, IReadOnlyList<IDiagnostic> diagnostics)> externalInputReferencesLazy;
 
         private readonly Lazy<ImmutableArray<ResourceMetadata>> allResourcesLazy;
         private readonly Lazy<ImmutableArray<DeclaredResourceMetadata>> declaredResourcesLazy;
@@ -79,6 +91,7 @@ namespace Bicep.Core.Semantics
             this.emitterSettingsLazy = new(() => new(this));
             this.emitLimitationInfoLazy = new(() => EmitLimitationCalculator.Calculate(this));
             this.importClosureInfoLazy = new(() => ImportClosureInfo.Calculate(this));
+            this.symbolsToInlineLazy = new(() => InlineDependencyVisitor.GetSymbolsToInline(this));
             this.symbolHierarchyLazy = new(() =>
             {
                 var hierarchy = new SymbolHierarchy();
@@ -87,6 +100,18 @@ namespace Bicep.Core.Semantics
                 return hierarchy;
             });
             this.resourceAncestorsLazy = new(() => ResourceAncestorGraph.Compute(this));
+            this.resourceScopeDataLazy = new(() =>
+            {
+                var diagnostics = ToListDiagnosticWriter.Create();
+                var scopeData = ScopeHelper.GetResourceScopeInfo(this, diagnostics);
+                return (scopeData, diagnostics.GetDiagnostics());
+            });
+            this.moduleScopeDataLazy = new(() =>
+            {
+                var diagnostics = ToListDiagnosticWriter.Create();
+                var scopeData = ScopeHelper.GetModuleScopeInfo(this, diagnostics);
+                return (scopeData, diagnostics.GetDiagnostics());
+            });
             this.ResourceMetadata = new ResourceMetadataCache(this);
 
             LinterAnalyzer = linterAnalyzer;
@@ -125,6 +150,15 @@ namespace Bicep.Core.Semantics
             });
 
             this.extensionsLazy = new(FindExtensions);
+            this.extensionDeclarationsByExtensionConfigAssignment = new(InitializeExtensionDeclarationToAssignmentDictionary);
+            this.extensionConfigAssignmentsByDeclaration = new(InitializeExtensionConfigAssignmentToDeclarationDictionary);
+
+            this.externalInputReferencesLazy = new(() =>
+            {
+                var diagnosticWriter = ToListDiagnosticWriter.Create();
+                var references = ExternalInputFunctionReferenceVisitor.CollectExternalInputReferences(this, diagnosticWriter);
+                return (references, diagnosticWriter.GetDiagnostics());
+            });
 
             this.exportsLazy = new(() => FindExportedTypes().Concat(FindExportedVariables()).Concat(FindExportedFunctions())
                 .DistinctBy(export => export.Name, LanguageConstants.IdentifierComparer)
@@ -132,7 +166,7 @@ namespace Bicep.Core.Semantics
 
             this.outputsLazy = new(() =>
             {
-                var outputs = new List<OutputMetadata>();
+                var outputs = ImmutableArray.CreateBuilder<OutputMetadata>();
 
                 foreach (var output in this.Root.OutputDeclarations.DistinctBy(o => o.Name))
                 {
@@ -142,15 +176,15 @@ namespace Bicep.Core.Semantics
                         // Resource type parameters are a special case, we need to convert to a dedicated
                         // type so we can compare differently for assignment and code generation.
                         var type = new UnresolvedResourceType(resourceType.TypeReference);
-                        outputs.Add(new OutputMetadata(output.Name, type, description, output.DeclaringOutput.IsSecureOutput(this)));
+                        outputs.Add(new OutputMetadata(output.Name, type, description, IsSecure: false));
                     }
                     else
                     {
-                        outputs.Add(new OutputMetadata(output.Name, output.Type, description, output.DeclaringOutput.IsSecureOutput(this)));
+                        outputs.Add(new OutputMetadata(output.Name, output.Type, description, TypeHelper.IsOrContainsSecureType(output.Type)));
                     }
                 }
 
-                return [.. outputs];
+                return outputs.ToImmutable();
             });
         }
 
@@ -231,7 +265,15 @@ namespace Bicep.Core.Semantics
 
         public ImportClosureInfo ImportClosureInfo => importClosureInfoLazy.Value;
 
+        public InlineDependencyVisitor.SymbolsToInline SymbolsToInline => symbolsToInlineLazy.Value;
+
+        public ExternalInputReferences ExternalInputReferences => externalInputReferencesLazy.Value.references;
+
         public ResourceAncestorGraph ResourceAncestors => resourceAncestorsLazy.Value;
+
+        public ImmutableDictionary<DeclaredResourceMetadata, ScopeHelper.ScopeData> ResourceScopeData => resourceScopeDataLazy.Value.scopeData;
+
+        public ImmutableDictionary<ModuleSymbol, ScopeHelper.ScopeData> ModuleScopeData => moduleScopeDataLazy.Value.scopeData;
 
         public ResourceMetadataCache ResourceMetadata { get; }
 
@@ -306,25 +348,19 @@ namespace Bicep.Core.Semantics
                 .Concat(this.ParsingErrorLookup)
                 .Concat(GetSemanticDiagnostics())
                 .Concat(GetLinterDiagnostics())
+                .Concat(this.resourceScopeDataLazy.Value.diagnostics)
+                .Concat(this.moduleScopeDataLazy.Value.diagnostics)
+                .Concat(this.externalInputReferencesLazy.Value.diagnostics)
                 // TODO: This could be eliminated if we change the params type checking code to operate more on symbols
                 .Concat(GetAdditionalParamsSemanticDiagnostics())
                 .Distinct()
                 .OrderBy(diag => diag.Span.Position);
-            var filteredDiagnostics = new List<IDiagnostic>();
+            var filteredDiagnostics = ImmutableArray.CreateBuilder<IDiagnostic>();
 
-            var disabledDiagnosticsCache = SourceFile.DisabledDiagnosticsCache;
             foreach (IDiagnostic diagnostic in diagnostics)
             {
-                (int diagnosticLine, _) = TextCoordinateConverter.GetPosition(SourceFile.LineStarts, diagnostic.Span.Position);
-
-                if (diagnosticLine == 0 || !diagnostic.CanBeSuppressed())
-                {
-                    filteredDiagnostics.Add(diagnostic);
-                    continue;
-                }
-
-                if (disabledDiagnosticsCache.TryGetDisabledNextLineDirective(diagnosticLine - 1) is { } disableNextLineDirectiveEndPositionAndCodes &&
-                    disableNextLineDirectiveEndPositionAndCodes.diagnosticCodes.Contains(diagnostic.Code))
+                if (diagnostic.CanBeSuppressed() &&
+                    SourceFile.DisabledDiagnosticsCache.IsDisabledAtPosition(diagnostic.Code, diagnostic.Span.Position))
                 {
                     continue;
                 }
@@ -332,7 +368,7 @@ namespace Bicep.Core.Semantics
                 filteredDiagnostics.Add(diagnostic);
             }
 
-            return [.. filteredDiagnostics];
+            return filteredDiagnostics.ToImmutable();
         }
 
         /// <summary>
@@ -421,7 +457,12 @@ namespace Bicep.Core.Semantics
         /// </summary>
         public FileSymbol Root => this.Binder.FileSymbol;
 
-        public ResourceScope TargetScope => this.Binder.TargetScope;
+        public ResourceScope TargetScope => SourceFileKind switch
+        {
+            BicepSourceFileKind.ParamsFile when TryGetSemanticModelForParamsFile() is { } templateModel
+                => templateModel.TargetScope,
+            _ => this.Binder.TargetScope,
+        };
 
         public ParameterMetadata? TryGetParameterMetadata(ParameterAssignmentSymbol parameterAssignmentSymbol) =>
             this.declarationsByAssignment.Value.TryGetValue(parameterAssignmentSymbol, out var parameterMetadata) ? parameterMetadata : null;
@@ -429,12 +470,18 @@ namespace Bicep.Core.Semantics
         public ParameterAssignmentSymbol? TryGetParameterAssignment(ParameterMetadata parameterMetadata) =>
             this.assignmentsByDeclaration.Value.TryGetValue(parameterMetadata, out var parameterAssignment) ? parameterAssignment : null;
 
+        public ExtensionMetadata? TryGetExtensionMetadata(ExtensionConfigAssignmentSymbol assignmentSymbol) =>
+            this.extensionDeclarationsByExtensionConfigAssignment.Value.GetValueOrDefault(assignmentSymbol);
+
+        public ExtensionConfigAssignmentSymbol? TryGetExtensionConfigAssignment(ExtensionMetadata extensionMetadata) =>
+            this.extensionConfigAssignmentsByDeclaration.Value.GetValueOrDefault(extensionMetadata);
+
         private ImmutableDictionary<ParameterMetadata, ParameterAssignmentSymbol?> InitializeDeclarationToAssignmentDictionary()
         {
             if (this.TryGetSemanticModelForParamsFile() is not { } usingModel)
             {
                 // not a param file or we can't resolve the semantic model via "using"
-                return ImmutableDictionary<ParameterMetadata, ParameterAssignmentSymbol?>.Empty;
+                return [];
             }
 
             var parameterAssignments = Root.ParameterAssignments.ToLookup(x => x.Name, LanguageConstants.IdentifierComparer);
@@ -449,7 +496,7 @@ namespace Bicep.Core.Semantics
             if (this.TryGetSemanticModelForParamsFile() is not { } usingModel)
             {
                 // not a param file or we can't resolve the semantic model via "using"
-                return ImmutableDictionary<ParameterAssignmentSymbol, ParameterMetadata?>.Empty;
+                return [];
             }
 
             var parameterDeclarations = usingModel.Parameters.ToLookup(x => x.Key, x => x.Value, LanguageConstants.IdentifierComparer);
@@ -461,22 +508,57 @@ namespace Bicep.Core.Semantics
 
         private ImmutableSortedDictionary<string, ExtensionMetadata> FindExtensions()
         {
-            if (!SourceFile.Features.ExtensibilityEnabled)
-            {
-                return ImmutableSortedDictionary<string, ExtensionMetadata>.Empty;
-            }
-
             var extensions = ImmutableSortedDictionary.CreateBuilder<string, ExtensionMetadata>();
 
             foreach (var extDecl in this.Root.ExtensionDeclarations.DistinctBy(p => p.Name))
             {
                 if (extDecl.TryGetNamespaceType() is { } extType)
                 {
-                    extensions.Add(extType.Name, new ExtensionMetadata(extType.Name, extType.ExtensionName, extType.ExtensionVersion, extType));
+                    extensions.Add(
+                        extType.Name,
+                        new ExtensionMetadata(
+                            extType.Name,
+                            extType.ExtensionName,
+                            extType.ExtensionVersion,
+                            extType,
+                            // Get the user assigned config type in the template to assist with params file/module configs type assignment.
+                            extDecl.DeclaringExtension.Config is not null
+                                ? TypeManager.GetTypeInfo(extDecl.DeclaringExtension.Config) as ObjectType
+                                : null));
                 }
             }
 
             return extensions.ToImmutable();
+        }
+
+        private ImmutableDictionary<ExtensionConfigAssignmentSymbol, ExtensionMetadata?> InitializeExtensionDeclarationToAssignmentDictionary()
+        {
+            if (this.TryGetSemanticModelForParamsFile() is not { } usingModel)
+            {
+                // not a param file or we can't resolve the semantic model via "using"
+                return [];
+            }
+
+            var extensionDeclarations = usingModel.Extensions.ToLookup(x => x.Key, x => x.Value, LanguageConstants.IdentifierComparer);
+
+            return Root.ExtensionConfigAssignments.ToImmutableDictionary(
+                decl => decl,
+                decl => extensionDeclarations[decl.Name].FirstOrDefault());
+        }
+
+        private ImmutableDictionary<ExtensionMetadata, ExtensionConfigAssignmentSymbol?> InitializeExtensionConfigAssignmentToDeclarationDictionary()
+        {
+            if (this.TryGetSemanticModelForParamsFile() is not { } usingModel)
+            {
+                // not a param file or we can't resolve the semantic model via "using"
+                return [];
+            }
+
+            var extensionConfigAssignments = Root.ExtensionConfigAssignments.ToLookup(x => x.Name, LanguageConstants.IdentifierComparer);
+
+            return usingModel.Extensions.ToImmutableDictionary(
+                decl => decl.Value,
+                decl => extensionConfigAssignments[decl.Key].FirstOrDefault());
         }
 
         private ISemanticModel? TryGetSemanticModelForParamsFile()
@@ -511,10 +593,11 @@ namespace Bicep.Core.Semantics
             return
                 // get diagnostics relating to missing parameter assignments or declarations
                 GatherParameterMismatchDiagnostics(semanticModel)
-                // get diagnostics relating to type mismatch of params between Bicep and params files
-                .Concat(GatherTypeMismatchDiagnostics())
-                // get diagnostics on whether the module referenced in the using statement is valid
-                .Concat(GatherUsingModelInvalidDiagnostics(semanticModel));
+                    .Concat(GatherMissingRequiredExtensionConfigAssignmentDiagnostics(semanticModel))
+                    // get diagnostics relating to type mismatch of params between Bicep and params files
+                    .Concat(GatherTypeMismatchDiagnostics())
+                    // get diagnostics on whether the module referenced in the using statement is valid
+                    .Concat(GatherUsingModelInvalidDiagnostics(semanticModel));
         }
 
         private IEnumerable<IDiagnostic> GatherUsingModelInvalidDiagnostics(ISemanticModel usingModel)
@@ -579,16 +662,72 @@ namespace Bicep.Core.Semantics
             }
         }
 
+        private IEnumerable<IDiagnostic> GatherMissingRequiredExtensionConfigAssignmentDiagnostics(ISemanticModel model)
+        {
+            if (model is not SemanticModel usingModel || !usingModel.Features.ModuleExtensionConfigsEnabled)
+            {
+                yield break;
+            }
+
+            // emit diagnostic only if there is a using statement
+            var usingDeclarationSyntax = this.Root.UsingDeclarationSyntax;
+
+            if (usingDeclarationSyntax?.Path is NoneLiteralSyntax)
+            {
+                yield break;
+            }
+
+            // assignment symbols that do not match to an extension in the main file
+            var assignmentAliasesWithMissingExtension = Root.ExtensionConfigAssignments.Where(a => TryGetExtensionMetadata(a) is null);
+
+            // assignments that are missing
+            var missingRequiredAssignments = usingModel.Extensions
+                .Where(kvp => kvp.Value.RequiresConfigAssignment && TryGetExtensionConfigAssignment(kvp.Value) is null)
+                .Select(kvp => (kvp.Key, kvp.Value.ConfigAssignmentDeclaredType!))
+                .OrderBy(kvp => kvp.Key)
+                .ToArray();
+
+            if (usingDeclarationSyntax is not null && missingRequiredAssignments.Any())
+            {
+                yield return DiagnosticBuilder.ForPosition(usingDeclarationSyntax.Path!)
+                    .MissingExtensionConfigAssignments(missingRequiredAssignments.Select(kvp => kvp.Key))
+                    .WithAppendedFixes(CodeFixHelper.GetCodeFixForMissingBicepExtensionConfigAssignments(Root.Syntax, SourceFile, missingRequiredAssignments));
+            }
+
+            foreach (var assignmentAlias in assignmentAliasesWithMissingExtension)
+            {
+                yield return DiagnosticBuilder.ForPosition(assignmentAlias.DeclaringSyntax)
+                    .ExtensionConfigAssignmentDoesNotMatchToExtension(assignmentAlias.Name);
+            }
+        }
+
         private IEnumerable<IDiagnostic> GatherTypeMismatchDiagnostics()
         {
-            foreach (var assignmentSymbol in Root.ParameterAssignments.Where(x => x.Context.SourceFile == Root.Context.SourceFile))
+            foreach (var assignmentSymbol in Root.ParameterAssignments)
             {
+                var isFromSameFile = assignmentSymbol.Context.SourceFile == Root.Context.SourceFile;
+
                 if (assignmentSymbol.Type is not ErrorType &&
                     assignmentSymbol.Type is not NullType && // `param x = null` is equivalent to skipping the assignment altogether
                     TypeManager.GetDeclaredType(assignmentSymbol.DeclaringSyntax) is { } declaredType)
                 {
                     var diagnostics = ToListDiagnosticWriter.Create();
-                    TypeValidator.NarrowTypeAndCollectDiagnostics(TypeManager, Binder, ParsingErrorLookup, diagnostics, assignmentSymbol.DeclaringParameterAssignment.Value, declaredType);
+
+                    if (isFromSameFile)
+                    {
+                        TypeValidator.NarrowTypeAndCollectDiagnostics(TypeManager, Binder, ParsingErrorLookup, diagnostics, assignmentSymbol.DeclaringParameterAssignment.Value, declaredType);
+                    }
+                    else
+                    {
+                        TypeValidator.NarrowTypeAndCollectDiagnostics(
+                            assignmentSymbol.Context.TypeManager,
+                            assignmentSymbol.Context.Binder,
+                            assignmentSymbol.Context.SourceFile.ParsingErrorLookup,
+                            diagnostics,
+                            assignmentSymbol.DeclaringParameterAssignment.Value,
+                            declaredType);
+                    }
+
                     foreach (var diagnostic in diagnostics.GetDiagnostics())
                     {
                         yield return diagnostic;

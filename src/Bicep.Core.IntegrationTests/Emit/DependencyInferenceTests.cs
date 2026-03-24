@@ -647,10 +647,10 @@ public class DependencyInferenceTests
     }
 
     [TestMethod]
-    public void Extensibility_resources_always_generate_explicit_dependency()
+    public void Extension_resources_always_generate_explicit_dependency()
     {
         var result = CompilationHelper.Compile(
-            new UnitTests.ServiceBuilder().WithFeatureOverrides(new(ExtensibilityEnabled: true))
+            new UnitTests.ServiceBuilder()
                 .WithConfigurationPatch(c => c.WithExtensions("""
                     {
                       "az": "builtin:",
@@ -660,7 +660,7 @@ public class DependencyInferenceTests
                       "bar": "builtin:"
                     }
                     """))
-                .WithNamespaceProvider(TestExtensibilityNamespaceProvider.CreateWithDefaults()),
+                .WithNamespaceProvider(TestExtensionsNamespaceProvider.CreateWithDefaults()),
             """
             extension bar with {
               connectionString: 'connectionString'
@@ -670,13 +670,18 @@ public class DependencyInferenceTests
               name: 'containerName'
             }
 
-            resource sa 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
-              name: toLower(container.name)
+            resource tags 'Microsoft.Resources/tags@2025-04-01' = {
+              name: 'default'
+              properties: {
+                tags: {
+                  tag: toLower(container.name)
+                }
+              }
             }
             """);
 
         result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
-        result.Template.Should().HaveJsonAtPath("$.resources.sa.dependsOn", """["container"]""");
+        result.Template.Should().HaveJsonAtPath("$.resources.tags.dependsOn", """["container"]""");
     }
 
     [TestMethod]

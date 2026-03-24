@@ -16,7 +16,6 @@ using Bicep.Core.Syntax;
 using Bicep.Core.Text;
 using Bicep.Core.TypeSystem;
 using Bicep.IO.Abstraction;
-using Microsoft.WindowsAzure.ResourceStack.Common.Extensions;
 
 namespace Bicep.Core.Diagnostics
 {
@@ -344,9 +343,9 @@ namespace Bicep.Core.Diagnostics
                 "BCP050",
                 "The specified path is empty.");
 
-            public Diagnostic FilePathBeginsWithForwardSlash() => CoreError(
+            public Diagnostic FilePathIsAbsolute() => CoreError(
                 "BCP051",
-                "The specified path begins with \"/\". Files must be referenced using relative paths.");
+                "The specified path seems to reference an absolute path. Files must be referenced using relative paths.");
 
             public Diagnostic UnknownProperty(bool warnInsteadOfError, TypeSymbol type, string badProperty) => CoreDiagnostic(
                 warnInsteadOfError ? DiagnosticLevel.Warning : DiagnosticLevel.Error,
@@ -964,9 +963,9 @@ namespace Bicep.Core.Diagnostics
                     $"This expression is being used in the for-body of the variable \"{variableName}\", which requires values that can be calculated at the start of the deployment.{variableDependencyChainClause}{violatingPropertyNameClause}{accessiblePropertiesClause}");
             }
 
-            public Diagnostic ModuleParametersPropertyRequiresObjectLiteral() => CoreError(
+            public Diagnostic PropertyRequiresObjectLiteral(string propertyName) => CoreError(
                 "BCP183",
-                $"The value of the module \"{LanguageConstants.ModuleParamsPropertyName}\" property must be an object literal.");
+                $"The value of the module \"{propertyName}\" property must be an object literal.");
 
             public Diagnostic FileExceedsMaximumSize(string filePath, long maxSize, string unit) => CoreError(
                 "BCP184",
@@ -1061,10 +1060,6 @@ namespace Bicep.Core.Diagnostics
             public Diagnostic ExpectedExtensionAliasName() => CoreError(
                 "BCP202",
                 "Expected an extension alias name at this location.");
-
-            public Diagnostic ExtensionsAreDisabled() => CoreError(
-                "BCP203",
-                $@"Using extension declaration requires enabling EXPERIMENTAL feature ""{nameof(ExperimentalFeaturesEnabled.Extensibility)}"".");
 
             public Diagnostic UnrecognizedExtension(string identifier) => CoreError(
                 "BCP204",
@@ -1161,7 +1156,7 @@ namespace Bicep.Core.Diagnostics
 
             public Diagnostic UnsupportedResourceTypeParameterOrOutputType(string resourceType) => CoreError(
                 "BCP227",
-                $"The type \"{resourceType}\" cannot be used as a parameter or output type. Extensibility types are currently not supported as parameters or outputs.");
+                $"The type \"{resourceType}\" cannot be used as a parameter or output type. Resource types from extensions are currently not supported as parameters or outputs.");
 
             public Diagnostic InvalidResourceScopeCannotBeResourceTypeParameter(string parameterName) => CoreError(
                 "BCP229",
@@ -1578,7 +1573,7 @@ namespace Bicep.Core.Diagnostics
                 "BCP335",
                 $"The provided value can have a length as large as {sourceMaxLength} and may be too long to assign to a target with a configured maximum length of {targetMaxLength}.");
 
-            public Diagnostic UnrecognizedParamsFileDeclaration()
+            public Diagnostic UnrecognizedParamsFileDeclaration(bool moduleExtensionConfigsEnabled)
             {
                 List<string> supportedDeclarations = [
                     LanguageConstants.UsingKeyword,
@@ -1588,14 +1583,19 @@ namespace Bicep.Core.Diagnostics
                     LanguageConstants.TypeKeyword,
                 ];
 
+                if (moduleExtensionConfigsEnabled)
+                {
+                    supportedDeclarations.Add(LanguageConstants.ExtensionConfigKeyword);
+                }
+
                 return CoreError(
                     "BCP337",
                     $@"This declaration type is not valid for a Bicep Parameters file. Supported declarations: {ToQuotedString(supportedDeclarations)}.");
             }
 
-            public Diagnostic FailedToEvaluateParameter(string parameterName, string message) => CoreError(
+            public Diagnostic FailedToEvaluateSubject(string subjectType, string subjectName, string message) => CoreError(
                 "BCP338",
-                $"Failed to evaluate parameter \"{parameterName}\": {message}");
+                $"Failed to evaluate {subjectType} \"{subjectName}\": {message}");
 
             public Diagnostic ArrayIndexOutOfBounds(long indexSought) => CoreError(
                 "BCP339",
@@ -1843,7 +1843,7 @@ namespace Bicep.Core.Diagnostics
 
                 return CoreError(
                 "BCP407",
-                $"Built-in extension \"microsoftGraph\" is retired. Use dynamic types instead. See https://aka.ms/graphBicepDynamicTypes")
+                $"Built-in extension \"microsoftGraph\" is retired. Use dynamic types instead. See https://aka.ms/graphbicep/dynamictypes")
                 with
                 {
                     Fixes = [codeFix]
@@ -1907,6 +1907,125 @@ namespace Bicep.Core.Diagnostics
             public Diagnostic ExtensionCannotBeReferenced() => CoreError(
                 "BCP418",
                 "Extensions cannot be referenced here. Extensions can only be referenced by module extension configurations.");
+
+            public Diagnostic InvalidReservedImplicitExtensionNamespace(string name) => CoreError(
+                "BCP419",
+                $"Namespace name \"{name}\", and cannot be used an extension name.");
+
+
+            public Diagnostic ScopeKindUnresolvableAtCompileTime() => CoreError(
+                "BCP420",
+                "The scope could not be resolved at compile time because the supplied expression is ambiguous or too complex. Scoping expressions must be reducible to a specific kind of scope without knowledge of parameter values.");
+
+            public Diagnostic SecureOutputsNotSupportedWithLocalDeploy(string moduleName) => CoreError(
+                "BCP421",
+                $"""Module "{moduleName}" contains one or more secure outputs, which are not supported with "{LanguageConstants.TargetScopeKeyword}" set to "{LanguageConstants.TargetScopeTypeLocal}".""");
+
+            public Diagnostic InstanceFunctionCallOnPossiblyNullBase(TypeSymbol baseType, SyntaxBase expression) => CoreWarning(
+                "BCP422",
+                $"A resource of type \"{baseType}\" may or may not exist when this function is called, which could cause the deployment to fail.")
+                with
+            { Fixes = [AsNonNullable(expression)] };
+
+            public Diagnostic ExtensionAliasMustBeDefinedForInlinedRegistryExtensionDeclaration() => CoreError(
+                "BCP423",
+                "An extension alias must be defined for an extension declaration with an inlined registry reference.");
+
+            public Diagnostic MissingExtensionConfigAssignments(IEnumerable<string> identifiers) => CoreError(
+                "BCP424",
+                $"The following extensions are declared in the Bicep file but are missing a configuration assignment in the params files: {ToQuotedString(identifiers)}.");
+
+            public Diagnostic ExtensionConfigAssignmentDoesNotMatchToExtension(string identifier) => CoreError(
+                "BCP425",
+                $"The extension configuration assignment for \"{identifier}\" does not match an extension in the Bicep file.");
+
+            public Diagnostic SecureOutputsOnlyAllowedOnDirectModuleReference() => CoreError(
+                "BCP426",
+                "Secure outputs may only be accessed via a direct module reference. Only non-sensitive outputs are supported when dereferencing a module indirectly via a variable or lambda.");
+
+            public Diagnostic EnvironmentVariableDoesNotExist(string name, string? suggestion) => CoreError(
+                "BCP427",
+                $"Environment variable \"{name}\" does not exist and there's no default value set.{suggestion}");
+
+            public Diagnostic DirectoryDoesNotExist(string relativePath) => CoreError(
+                "BCP428",
+                $"Directory \"{relativePath}\" does not exist or additional permissions are necessary to access it.");
+
+            public Diagnostic ErrorOccuredBrowsingDirectory(string exceptionMessage) => CoreError(
+                "BCP429",
+                $"An error occured browsing directory. {exceptionMessage}");
+
+            public Diagnostic FoundFileInsteadOfDirectory(string filePath) => CoreError(
+                "BCP430",
+                $"Unable to open directory at path \"{filePath}\". Found a file instead.");
+
+            public Diagnostic InvalidModuleExtensionConfigAssignmentExpression(string propertyName) => CoreError(
+                "BCP431",
+                $"The value of the \"{propertyName}\" property must be an object literal or a valid extension config inheritance expression.");
+
+            public Diagnostic RuntimeValueNotAllowedInFunctionArgument(string? functionName, string? parameterName, string? accessedSymbolName, IEnumerable<string>? accessiblePropertyNames, IEnumerable<string>? variableDependencyChain)
+            {
+                var variableDependencyChainClause = BuildVariableDependencyChainClause(variableDependencyChain);
+                var accessiblePropertiesClause = BuildAccessiblePropertiesClause(accessedSymbolName, accessiblePropertyNames);
+
+                return CoreError(
+                    "BCP432",
+                    $"This expression is being used in parameter \"{parameterName ?? "unknown"}\" of the function \"{functionName ?? "unknown"}\", which requires a value that can be calculated at the start of the deployment.{variableDependencyChainClause}{accessiblePropertiesClause}");
+            }
+
+            public Diagnostic InlinedResourcesCannotHaveExplicitDependencies(string symbolicName, IEnumerable<string> runtimePropertyNames) => CoreError(
+                "BCP433",
+                $"The resource \"{symbolicName}\" cannot declare explicit dependencies because its identifier properties including {ToQuotedString(runtimePropertyNames.OrderBy(x => x))} cannot be calculated at the start of the deployment.");
+
+            public Diagnostic CannotExplicitlyDependOnInlinedResource(string dependentName, string dependencyName, IEnumerable<string> runtimePropertyNames) => CoreError(
+                "BCP434",
+                $"The resource \"{dependentName}\" cannot declare an explicit dependency on \"{dependencyName}\" because the identifier properties of the latter including {ToQuotedString(runtimePropertyNames.OrderBy(x => x))} cannot be calculated at the start of the deployment.");
+
+            public Diagnostic UsingWithClauseRequiresExperimentalFeature() => CoreError(
+                "BCP435",
+                $"Using the \"{LanguageConstants.WithKeyword}\" keyword with a \"{LanguageConstants.UsingKeyword}\" statement requires enabling EXPERIMENTAL feature \"{nameof(ExperimentalFeaturesEnabled.DeployCommands)}\".");
+
+            public Diagnostic ExpectedWithKeywordOrNewLine() => CoreError(
+                "BCP436",
+                $"Expected the \"with\" keyword or a new line character at this location.");
+
+            public Diagnostic BaseIdentifierNotAvailableWithoutExtends() => CoreError(
+                "BCP437",
+                $"The identifier '{LanguageConstants.BaseIdentifier}' is only available in parameter files that declare an '{LanguageConstants.ExtendsKeyword}' clause.");
+
+            public Diagnostic BaseIdentifierRedeclared() => CoreError(
+                "BCP438",
+                $"The identifier '{LanguageConstants.BaseIdentifier}' is reserved and cannot be declared.");
+
+            public Diagnostic SecureDecoratorOnlyAllowedOnStringsAndObjects() => CoreError(
+                "BCP439",
+                "The @secure() decorator can only be used on statements whose type clause is \"string,\", \"object\", or a literal type.");
+
+            public Diagnostic SecureDecoratorTargetMustFitWithinStringOrObject() => CoreError(
+                "BCP440",
+                "The @secure() decorator can only be used on statements whose type is a subtype of \"string\" or \"object\".");
+
+            public Diagnostic CannotUseExistingWithWriteOnlyResource(ResourceTypeReference resourceTypeReference) => CoreError(
+                "BCP441",
+                $"Resource type \"{resourceTypeReference.FormatName()}\" cannot be used with the 'existing' keyword.");
+
+            public Diagnostic UsingWithClauseRequiredIfExperimentalFeatureEnabled() => CoreError(
+                "BCP443",
+                $"""The "{LanguageConstants.UsingKeyword}" statement requires a "{LanguageConstants.WithKeyword}" clause if the EXPERIMENTAL feature "{nameof(ExperimentalFeaturesEnabled.DeployCommands)}" is enabled.""");
+
+            public Diagnostic RuntimeValueNotAllowedInExtensionDeclarationWithClause(string? accessedSymbolName, IEnumerable<string>? accessiblePropertyNames, IEnumerable<string>? variableDependencyChain)
+            {
+                var variableDependencyChainClause = BuildVariableDependencyChainClause(variableDependencyChain);
+                var accessiblePropertiesClause = BuildAccessiblePropertiesClause(accessedSymbolName, accessiblePropertyNames);
+
+                return CoreError(
+                    "BCP444",
+                    $"This expression is being used as a default value for an extension configuration property, which requires a value that can be calculated at the start of the deployment.{variableDependencyChainClause}{accessiblePropertiesClause}");
+            }
+
+            public Diagnostic NullIfNotFoundOnlyValidOnExistingResources() => CoreError(
+                "BCP445",
+                $@"The ""@{LanguageConstants.NullIfNotFoundDecoratorName}()"" decorator can only be used on existing resources.");
         }
 
         public static DiagnosticBuilderInternal ForPosition(TextSpan span)

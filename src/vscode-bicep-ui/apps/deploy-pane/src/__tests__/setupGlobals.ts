@@ -3,7 +3,9 @@
 
 import { vi } from "vitest";
 
+import "@testing-library/jest-dom/vitest";
 import "element-internals-polyfill";
+import "jest-styled-components";
 
 global.ResizeObserver = vi.fn(() => ({
   observe: vi.fn(),

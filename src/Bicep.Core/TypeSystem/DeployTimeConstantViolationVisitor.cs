@@ -59,17 +59,50 @@ namespace Bicep.Core.TypeSystem
                 ForSyntax => diagnosticBuilder.RuntimeValueNotAllowedInForExpression(accessedSymbolName, accessiblePropertyNames, variableDependencyChain),
                 FunctionCallSyntaxBase functionCallSyntaxBase => diagnosticBuilder.RuntimeValueNotAllowedInRunTimeFunctionArguments(functionCallSyntaxBase.Name.IdentifierName, accessedSymbolName, accessiblePropertyNames, variableDependencyChain),
                 FunctionDeclarationSyntax => diagnosticBuilder.RuntimeValueNotAllowedInFunctionDeclaration(accessedSymbolName, accessiblePropertyNames, variableDependencyChain),
-                _ => throw new ArgumentOutOfRangeException(nameof(this.DeployTimeConstantContainer), "Expected an ObjectPropertySyntax with a propertyName, an IfConditionSyntax, a ForSyntax, a FunctionCallSyntaxBase, or a FunctionDeclarationSyntax."),
+                FunctionArgumentSyntax arg when GetFunctionAndParameterName(arg) is { } parameterMetadata
+                    => diagnosticBuilder.RuntimeValueNotAllowedInFunctionArgument(
+                        parameterMetadata.functionName,
+                        parameterMetadata.parameterName,
+                        accessedSymbolName,
+                        accessiblePropertyNames,
+                        variableDependencyChain),
+                ExtensionWithClauseSyntax when this.SemanticModel.Binder.GetParent(this.DeployTimeConstantContainer) is ExtensionDeclarationSyntax
+                    => diagnosticBuilder.RuntimeValueNotAllowedInExtensionDeclarationWithClause(accessedSymbolName, accessiblePropertyNames, variableDependencyChain),
+                _ => throw new ArgumentOutOfRangeException(nameof(this.DeployTimeConstantContainer), $@"Unexpected syntax type '{this.DeployTimeConstantContainer.GetType().Name}'."),
             };
 
             this.DiagnosticWriter.Write(diagnostic);
         }
+
+        protected (SyntaxBase? parent, SyntaxBase immediateChild) GetParentAndChildIgnoringNonNullAssertions(SyntaxBase syntax)
+            => SemanticModel.Binder.GetParent(syntax) switch
+            {
+                NonNullAssertionSyntax nonNullAssertion => GetParentAndChildIgnoringNonNullAssertions(nonNullAssertion),
+                var parent => (parent, syntax),
+            };
 
         private string? ErrorSyntaxInForBodyOfVariable(ForSyntax forSyntax, SyntaxBase errorSyntax) =>
             this.SemanticModel.Binder.GetParent(forSyntax) is VariableDeclarationSyntax variableDeclarationSyntax &&
             TextSpan.AreOverlapping(errorSyntax, forSyntax.Body)
                 ? variableDeclarationSyntax.Name.IdentifierName
                 : null;
+
+        private (string? functionName, string? parameterName) GetFunctionAndParameterName(FunctionArgumentSyntax arg)
+        {
+            if (SemanticModel.Binder.GetParent(arg) is not FunctionCallSyntaxBase func)
+            {
+                return (null, null);
+            }
+
+            var argumentIndex = func.Arguments.IndexOf(arg);
+            var parameterName = SemanticModel.TypeManager.GetMatchedFunctionOverload(func) is FunctionOverload overload
+                ? (-1 < argumentIndex && argumentIndex < overload.FixedParameters.Length
+                    ? overload.FixedParameters[argumentIndex].Name
+                    : overload.VariableParameter?.GetNamedSignature(argumentIndex))
+                : null;
+
+            return (func.Name.IdentifierName, parameterName ?? argumentIndex.ToString());
+        }
 
         private static IEnumerable<string>? GetAccessiblePropertyNames(DeclaredSymbol? accessedSymbol, ObjectType? accessedObjectType)
         {
@@ -82,15 +115,22 @@ namespace Bicep.Core.TypeSystem
                 .Where(kv => kv.Value.Flags.HasFlag(TypePropertyFlags.ReadableAtDeployTime) && !kv.Value.Flags.HasFlag(TypePropertyFlags.WriteOnly))
                 .Select(kv => kv.Key);
 
-            if (accessedSymbol is ResourceSymbol { DeclaringResource: var declaringResource } &&
-                declaringResource.TryGetBody() is { } bodySyntax)
+            if (accessedSymbol is ResourceSymbol resourceSymbol)
             {
-                var declaredTopLevelPropertyNames = bodySyntax.ToNamedPropertyDictionary().Keys
-                    .Append(AzResourceTypeProvider.ResourceIdPropertyName)
-                    .Append(AzResourceTypeProvider.ResourceTypePropertyName)
-                    .Append(AzResourceTypeProvider.ResourceApiVersionPropertyName);
+                IEnumerable<string> alwaysPresentTopLevelPropertyNames
+                    = [AzResourceTypeProvider.ResourceTypePropertyName, AzResourceTypeProvider.ResourceApiVersionPropertyName];
 
-                accessiblePropertyNames = accessiblePropertyNames.Intersect(declaredTopLevelPropertyNames, LanguageConstants.IdentifierComparer);
+                if (resourceSymbol.TryGetResourceType()?.IsAzResource() is true)
+                {
+                    string[] azAlwaysPresentTopLevelPropertyNames
+                        = [AzResourceTypeProvider.ResourceIdPropertyName, AzResourceTypeProvider.ResourceNamePropertyName];
+                    alwaysPresentTopLevelPropertyNames = alwaysPresentTopLevelPropertyNames.Concat(azAlwaysPresentTopLevelPropertyNames);
+                }
+
+                var declaredTopLevelPropertyNames = resourceSymbol.DeclaringResource.TryGetBody()?.ToNamedPropertyDictionary().Keys ?? [];
+
+                accessiblePropertyNames = accessiblePropertyNames
+                    .Intersect(declaredTopLevelPropertyNames.Concat(alwaysPresentTopLevelPropertyNames), LanguageConstants.IdentifierComparer);
             }
 
             return accessiblePropertyNames;

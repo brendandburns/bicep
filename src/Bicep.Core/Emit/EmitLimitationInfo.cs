@@ -15,9 +15,11 @@ public record ParameterAssignmentValue(JToken? Value, Expression? Expression, Pa
 
 public record ExtensionConfigAssignmentValue(JToken? Value, ParameterKeyVaultReferenceExpression? KeyVaultReferenceExpression);
 
+public record ExternalInputDefinition(string Key, string Kind, JToken? Config);
+
 public record EmitLimitationInfo(
     IReadOnlyList<IDiagnostic> Diagnostics,
-    ImmutableDictionary<ModuleSymbol, ScopeHelper.ScopeData> ModuleScopeData,
-    ImmutableDictionary<DeclaredResourceMetadata, ScopeHelper.ScopeData> ResourceScopeData,
     ImmutableDictionary<ParameterAssignmentSymbol, ParameterAssignmentValue> ParameterAssignments,
-    ImmutableDictionary<ExtensionConfigAssignmentSymbol, ImmutableDictionary<string, ExtensionConfigAssignmentValue>> ExtensionConfigAssignments);
+    ImmutableDictionary<ExtensionConfigAssignmentSymbol, ImmutableDictionary<string, ExtensionConfigAssignmentValue>> ExtensionConfigAssignments,
+    ParameterAssignmentValue? UsingConfig,
+    ImmutableArray<ExternalInputDefinition>? ExternalInputDefinitions);

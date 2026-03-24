@@ -11,7 +11,6 @@ using Bicep.Core.Configuration;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Extensions;
 using Bicep.Core.Features;
-using Bicep.Core.FileSystem;
 using Bicep.Core.Modules;
 using Bicep.Core.Registry.Catalog;
 using Bicep.Core.Registry.Oci;
@@ -32,10 +31,8 @@ namespace Bicep.Core.Registry
         private readonly IPublicModuleMetadataProvider publicModuleMetadataProvider;
 
         public OciArtifactRegistry(
-            IFileResolver FileResolver,
             IContainerRegistryClientFactory clientFactory,
             IPublicModuleMetadataProvider publicModuleMetadataProvider)
-            : base(FileResolver)
         {
             this.containerRegistryManager = new AzureContainerRegistryManager(clientFactory);
             this.publicModuleMetadataProvider = publicModuleMetadataProvider;
@@ -120,19 +117,6 @@ namespace Bicep.Core.Registry
             }
 
             return true;
-        }
-
-        public override ResultWithDiagnosticBuilder<Uri> TryGetLocalArtifactEntryPointUri(OciArtifactReference reference)
-        {
-            var artifactFileType = reference.Type switch
-            {
-                ArtifactType.Module => ArtifactFileType.ModuleMain,
-                ArtifactType.Extension => ArtifactFileType.Extension,
-                _ => throw new UnreachableException()
-            };
-
-            var file = this.GetArtifactFile(reference, artifactFileType);
-            return new(file.Uri.ToUri());
         }
 
         public override string? TryGetDocumentationUri(OciArtifactReference ociArtifactModuleReference)
@@ -223,7 +207,7 @@ namespace Bicep.Core.Registry
             // CONSIDER: Run these in parallel
             foreach (var reference in referencesEvaluated)
             {
-                using var timer = new ExecutionTimer($"Restore module {reference.FullyQualifiedReference} to {GetArtifactDirectory(reference).Uri.GetLocalFilePath()}");
+                using var timer = new ExecutionTimer($"Restore module {reference.FullyQualifiedReference} to {GetArtifactDirectory(reference).Uri.GetFilePath()}");
                 var (result, errorMessage) = await this.TryRestoreArtifactAsync(reference.ReferencingFile.Configuration, reference);
 
                 if (result is null)
@@ -531,9 +515,6 @@ namespace Bicep.Core.Registry
 
             return this.GetArtifactDirectory(reference).GetFile(fileName);
         }
-
-        public override Uri? TryGetExtensionBinary(OciArtifactReference reference)
-            => GetArtifactFile(reference, ArtifactFileType.ExtensionBinary).Uri.ToUri();
 
         private enum ArtifactFileType
         {

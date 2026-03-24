@@ -13,8 +13,6 @@ public interface IFeatureProvider
 
     bool SymbolicNameCodegenEnabled { get; }
 
-    bool ExtensibilityEnabled { get; }
-
     bool ResourceTypedParamsAndOutputsEnabled { get; }
 
     bool SourceMappingEnabled { get; }
@@ -27,21 +25,21 @@ public interface IFeatureProvider
 
     bool WaitAndRetryEnabled { get; }
 
-    bool OnlyIfNotExistsEnabled { get; }
-
     bool LocalDeployEnabled { get; }
 
     bool ExtendableParamFilesEnabled { get; }
 
     bool ResourceInfoCodegenEnabled { get; }
 
-    bool ExtensibilityV2EmittingEnabled { get; }
-
     bool ModuleExtensionConfigsEnabled { get; }
 
-    bool DesiredStateConfigurationEnabled { get; }
+    bool UserDefinedConstraintsEnabled { get; }
 
-    bool ExternalInputFunctionEnabled { get; }
+    bool DeployCommandsEnabled { get; }
+
+    bool ThisNamespaceEnabled { get; }
+
+    bool ExistingNullIfNotFoundEnabled { get; }
 
     IEnumerable<(string name, bool impactsCompilation, bool usesExperimentalArmEngineFeature)> EnabledFeatureMetadata
     {
@@ -53,18 +51,18 @@ public interface IFeatureProvider
             {
                 (SymbolicNameCodegenEnabled, CoreResources.ExperimentalFeatureNames_SymbolicNameCodegen, false, false), // Symbolic name codegen is listed as not impacting compilation because it is GA
                 (ResourceInfoCodegenEnabled, CoreResources.ExperimentalFeatureNames_ResourceInfoCodegen, true, true),
-                (ExtensibilityEnabled, CoreResources.ExperimentalFeatureNames_Extensibility, true, true),
                 (ResourceTypedParamsAndOutputsEnabled, CoreResources.ExperimentalFeatureNames_ResourceTypedParamsAndOutputs, true, false),
                 (SourceMappingEnabled, CoreResources.ExperimentalFeatureNames_SourceMapping, true, false),
                 (TestFrameworkEnabled, CoreResources.ExperimentalFeatureNames_TestFramework, false, false),
                 (AssertsEnabled, CoreResources.ExperimentalFeatureNames_Asserts, true, true),
                 (WaitAndRetryEnabled, CoreResources.ExperimentalFeatureNames_WaitAndRetry, true, true),
-                (OnlyIfNotExistsEnabled, CoreResources.ExperimentalFeatureNames_OnlyIfNotExists, true, true),
                 (LocalDeployEnabled, "Enable local deploy", true, true),
                 (ExtendableParamFilesEnabled, "Enable extendable parameters", true, false),
                 (ModuleExtensionConfigsEnabled, "Enable defining extension configs for modules", true, true),
-                (DesiredStateConfigurationEnabled, "Enable defining Desired State Configuration documents", true, false),
-                (ExternalInputFunctionEnabled, CoreResources.ExperimentalFeatureNames_ExternalInputFunction, true, false),
+                (UserDefinedConstraintsEnabled, "Enable @validate() decorator", true, true),
+                (DeployCommandsEnabled, "Enable deploy commands", true, true),
+                (ThisNamespaceEnabled, "Enable 'this' namespace", true, true),
+                (ExistingNullIfNotFoundEnabled, "Enable @nullIfNotFound() decorator for existing resources", true, true),
             })
             {
                 if (enabled)

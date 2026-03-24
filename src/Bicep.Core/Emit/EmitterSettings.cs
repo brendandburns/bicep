@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 using Bicep.Core.Semantics;
+using Bicep.Core.Semantics.Namespaces;
 using Bicep.Core.SourceGraph;
 using Bicep.Core.Syntax;
 using Bicep.Core.Syntax.Visitors;
@@ -20,6 +21,9 @@ namespace Bicep.Core.Emit
                 UseExperimentalTemplateLanguageVersion ||
                 // symbolic name codegen has been explicitly enabled
                 model.Features.SymbolicNameCodegenEnabled ||
+                // use of extensions or extensible resources
+                model.Root.ExtensionDeclarations.Any() ||
+                model.DeclaredResources.Any(x => !x.IsAzResource) ||
                 // resourceinfo codegen has been enabled
                 model.Features.ResourceInfoCodegenEnabled ||
                 // there are typed variables
@@ -32,13 +36,12 @@ namespace Bicep.Core.Emit
                 model.Root.ImportedSymbols.Any() ||
                 // there are any wildcard compile-time imports
                 model.Root.WildcardImports.Any() ||
-                // there are any existing resources with explicit dependencies
-                model.Root.ResourceDeclarations.Any(r => r.DeclaringResource.IsExistingResource() &&
-                    r.DeclaringResource.TryGetBody()?.TryGetPropertyByName(LanguageConstants.ResourceDependsOnPropertyName) is not null) ||
                 // there are secure outputs
                 model.Outputs.Any(output => output.IsSecure) ||
                 // there are secure outputs in modules
                 model.Root.ModuleDeclarations.Any(module => module.TryGetSemanticModel().TryUnwrap()?.Outputs.Any(output => output.IsSecure) ?? false) ||
+                // direct access to a looped resource, requiring use of 'references()'
+                RequiresReferencesFunctionVisitor.RequiresReferencesFunction(model.Binder) ||
                 // any user-defined type declaration syntax is used (e.g., in a `param` or `output` statement)
                 SyntaxAggregator.Aggregate(model.SourceFile.ProgramSyntax,
                     seed: false,
@@ -51,7 +54,13 @@ namespace Bicep.Core.Emit
                     resultSelector: result => result,
                     continuationFunction: (result, syntax) => !result) ||
                 // there are optional module names
-                model.Root.ModuleDeclarations.Any(module => module.TryGetBodyProperty(LanguageConstants.ModuleNamePropertyName) is null);
+                model.Root.ModuleDeclarations.Any(module => module.TryGetBodyProperty(LanguageConstants.ModuleNamePropertyName) is null) ||
+                SyntaxAggregator.Aggregate(model.SourceFile.ProgramSyntax,
+                    seed: false,
+                    function: (found, syntax) => found ||
+                        (syntax is ResourceDeclarationSyntax rds && ResourceRequiresSymbolicNames(model, rds)),
+                    resultSelector: result => result,
+                    continuationFunction: (result, syntax) => !result);
         }
 
         /// <summary>
@@ -65,5 +74,27 @@ namespace Bicep.Core.Emit
         public bool UseExperimentalTemplateLanguageVersion { get; }
 
         public BicepSourceFileKind FileKind { get; }
+
+        private static bool ResourceRequiresSymbolicNames(SemanticModel model, ResourceDeclarationSyntax resourceSyntax)
+        {
+            if (resourceSyntax.IsExistingResource() &&
+                resourceSyntax.TryGetBody()?.TryGetPropertyByName(LanguageConstants.ResourceDependsOnPropertyName) is not null)
+            {
+                // Existing resources with explicit dependencies require symbolic names
+                return true;
+            }
+
+            if (SemanticModelHelper.TryGetDecoratorInNamespace(
+                model,
+                resourceSyntax,
+                SystemNamespaceType.BuiltInName,
+                LanguageConstants.OnlyIfNotExistsPropertyName) is not null)
+            {
+                // Resources with the 'onlyIfNotExists' decorator require symbolic names
+                return true;
+            }
+
+            return false;
+        }
     }
 }

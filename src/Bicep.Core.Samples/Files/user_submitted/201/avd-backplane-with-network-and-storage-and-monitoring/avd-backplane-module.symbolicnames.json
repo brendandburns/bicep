@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "dev",
-      "templateHash": "16704253611176477253"
+      "templateHash": "18177712368314985712"
     }
   },
   "parameters": {
@@ -109,7 +109,7 @@
     },
     "avdmonitor": {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2022-09-01",
+      "apiVersion": "2025-04-01",
       "name": "LAWorkspace",
       "resourceGroup": "[parameters('logAnalyticsResourceGroup')]",
       "properties": {
@@ -145,7 +145,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "6607063108355547742"
+              "templateHash": "3538928845112752341"
             }
           },
           "parameters": {
@@ -184,7 +184,7 @@
             },
             "avdmonitor": {
               "type": "Microsoft.Resources/deployments",
-              "apiVersion": "2022-09-01",
+              "apiVersion": "2025-04-01",
               "name": "myBicepLADiag",
               "resourceGroup": "[parameters('avdBackplaneResourceGroup')]",
               "properties": {
@@ -211,7 +211,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "dev",
-                      "templateHash": "7397250722142967265"
+                      "templateHash": "4097443846793063282"
                     }
                   },
                   "parameters": {
@@ -241,7 +241,7 @@
                     "avdhpds": {
                       "type": "microsoft.insights/diagnosticSettings",
                       "apiVersion": "2017-05-01-preview",
-                      "scope": "[format('Microsoft.DesktopVirtualization/hostPools/{0}', parameters('hostpoolName'))]",
+                      "scope": "[resourceId('Microsoft.DesktopVirtualization/hostPools', parameters('hostpoolName'))]",
                       "name": "hostpool-diag",
                       "properties": {
                         "workspaceId": "[parameters('logAnalyticsWorkspaceID')]",
@@ -272,7 +272,7 @@
                     "avdwsds": {
                       "type": "microsoft.insights/diagnosticSettings",
                       "apiVersion": "2017-05-01-preview",
-                      "scope": "[format('Microsoft.DesktopVirtualization/workspaces/{0}', parameters('workspaceName'))]",
+                      "scope": "[resourceId('Microsoft.DesktopVirtualization/workspaces', parameters('workspaceName'))]",
                       "name": "workspacepool-diag",
                       "properties": {
                         "workspaceId": "[parameters('logAnalyticsWorkspaceID')]",

@@ -28,16 +28,7 @@ namespace Bicep.Core.Extensions
             try
             {
                 var currentDirectory = fileHandle.GetParent();
-                var relativeDirectory = currentDirectory.GetDirectory(path);
-
-                if (relativeDirectory.Exists())
-                {
-                    var uri = path.AsSpan()[^1] == '/' ? relativeDirectory.Uri : relativeDirectory.Uri.ToString()[..^1];
-
-                    return new(x => x.FoundDirectoryInsteadOfFile(uri));
-                }
-
-                return new(currentDirectory.GetFile(path));
+                return currentDirectory.TryGetRelativeFile(path);
             }
             catch (IOException exception)
             {
@@ -90,7 +81,8 @@ namespace Bicep.Core.Extensions
         public static void Write(this IFileHandle fileHandle, string text)
         {
             using var fileStream = fileHandle.OpenWrite();
-            using var writer = new StreamWriter(fileStream);
+            using var writer = new StreamWriter(fileStream, leaveOpen: true);
+
             writer.Write(text);
         }
 

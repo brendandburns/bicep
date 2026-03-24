@@ -1,12 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 using System.Collections.Immutable;
+using System.IO.Abstractions;
 using Bicep.Core.Analyzers.Interfaces;
 using Bicep.Core.Configuration;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Extensions;
 using Bicep.Core.Features;
-using Bicep.Core.FileSystem;
 using Bicep.Core.Navigation;
 using Bicep.Core.Registry;
 using Bicep.Core.Semantics;
@@ -14,46 +14,60 @@ using Bicep.Core.Semantics.Namespaces;
 using Bicep.Core.SourceGraph;
 using Bicep.Core.Syntax;
 using Bicep.Core.Utils;
+using Bicep.IO.Abstraction;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Bicep.Core;
 
 public class BicepCompiler
 {
+    public static BicepCompiler Create(Action<IServiceCollection>? configureServices = null)
+    {
+        var services = new ServiceCollection();
+        configureServices?.Invoke(services);
+
+        services.AddBicepCore();
+
+        return services
+            .BuildServiceProvider()
+            .GetRequiredService<BicepCompiler>();
+    }
+
     private readonly IEnvironment environment;
     private readonly INamespaceProvider namespaceProvider;
     private readonly IBicepAnalyzer bicepAnalyzer;
-    private readonly IFileResolver fileResolver;
+    private readonly IFileExplorer fileExplorer;
     private readonly IModuleDispatcher moduleDispatcher;
 
     public BicepCompiler(
         IEnvironment environment,
         INamespaceProvider namespaceProvider,
         IBicepAnalyzer bicepAnalyzer,
-        IFileResolver fileResolver,
+        IFileExplorer fileExplorer,
         IModuleDispatcher moduleDispatcher,
         ISourceFileFactory sourceFileFactory)
     {
         this.environment = environment;
         this.namespaceProvider = namespaceProvider;
         this.bicepAnalyzer = bicepAnalyzer;
-        this.fileResolver = fileResolver;
+        this.fileExplorer = fileExplorer;
         this.moduleDispatcher = moduleDispatcher;
         this.SourceFileFactory = sourceFileFactory;
     }
 
     public ISourceFileFactory SourceFileFactory { get; }
 
-    public Compilation CreateCompilationWithoutRestore(Uri bicepUri, IReadOnlyWorkspace? workspace = null, bool markAllForRestore = false)
+    public Compilation CreateCompilationWithoutRestore(IOUri bicepUri, IActiveSourceFileLookup? workspace = null, bool markAllForRestore = false)
     {
-        workspace ??= new Workspace();
-        var sourceFileGrouping = SourceFileGroupingBuilder.Build(fileResolver, moduleDispatcher, workspace, this.SourceFileFactory, bicepUri, markAllForRestore);
+        workspace ??= new ActiveSourceFileSet();
+        var sourceFileGrouping = SourceFileGroupingBuilder.Build(fileExplorer, moduleDispatcher, workspace, this.SourceFileFactory, bicepUri, markAllForRestore);
 
         return Create(sourceFileGrouping);
     }
 
-    public async Task<Compilation> CreateCompilation(Uri bicepUri, IReadOnlyWorkspace? workspace = null, bool skipRestore = false, bool forceRestore = false)
+    public async Task<Compilation> CreateCompilation(IOUri bicepUri, IActiveSourceFileLookup? workspace = null, bool skipRestore = false, bool forceRestore = false)
     {
-        workspace ??= new Workspace();
+        workspace ??= new ActiveSourceFileSet();
         var compilation = CreateCompilationWithoutRestore(bicepUri, workspace, markAllForRestore: forceRestore);
         var sourceFileGrouping = compilation.SourceFileGrouping;
 
@@ -71,21 +85,21 @@ public class BicepCompiler
         if (await moduleDispatcher.RestoreArtifacts(ArtifactHelper.GetValidArtifactReferences(artifactsToRestore), forceRestore: forceRestore))
         {
             // modules had to be restored - recompile
-            sourceFileGrouping = SourceFileGroupingBuilder.Rebuild(fileResolver, moduleDispatcher, workspace, this.SourceFileFactory, sourceFileGrouping);
+            sourceFileGrouping = SourceFileGroupingBuilder.Rebuild(fileExplorer, moduleDispatcher, workspace, this.SourceFileFactory, sourceFileGrouping);
         }
         return Create(sourceFileGrouping);
     }
 
     public async Task<ImmutableDictionary<BicepSourceFile, ImmutableArray<IDiagnostic>>> Restore(Compilation compilation, bool forceRestore)
     {
-        var workspace = new Workspace();
+        var workspace = new ActiveSourceFileSet();
         var sourceFileGrouping = compilation.SourceFileGrouping;
         var artifactsToRestore = sourceFileGrouping.GetArtifactsToRestore(forceRestore);
 
         if (await moduleDispatcher.RestoreArtifacts(ArtifactHelper.GetValidArtifactReferences(artifactsToRestore), forceRestore))
         {
             // artifacts had to be restored - recompile
-            sourceFileGrouping = SourceFileGroupingBuilder.Rebuild(fileResolver, moduleDispatcher, workspace, this.SourceFileFactory, sourceFileGrouping);
+            sourceFileGrouping = SourceFileGroupingBuilder.Rebuild(fileExplorer, moduleDispatcher, workspace, this.SourceFileFactory, sourceFileGrouping);
         }
 
         return GetModuleRestoreDiagnosticsByBicepFile(sourceFileGrouping, [.. artifactsToRestore], forceRestore);
@@ -99,7 +113,7 @@ public class BicepCompiler
             bicepAnalyzer,
             moduleDispatcher,
             this.SourceFileFactory,
-            ImmutableDictionary<ISourceFile, ISemanticModel>.Empty);
+            []);
 
     private static ImmutableDictionary<BicepSourceFile, ImmutableArray<IDiagnostic>> GetModuleRestoreDiagnosticsByBicepFile(SourceFileGrouping sourceFileGrouping, ImmutableHashSet<ArtifactResolutionInfo> originalModulesToRestore, bool forceModulesRestore)
     {
@@ -113,7 +127,7 @@ public class BicepCompiler
                 if (artifact.Syntax is not null and not ExtensionDeclarationSyntax &&
                     DiagnosticForModule(grouping, artifact.Syntax) is { } diagnostic)
                 {
-                    yield return (artifact.Origin, diagnostic);
+                    yield return (artifact.ReferencingFile, diagnostic);
                 }
             }
         }

@@ -43,7 +43,7 @@ namespace Bicep.Core.Emit
             DetectIncorrectlyFormattedNames(model, diagnostics);
             DetectUnexpectedResourceLoopInvariantProperties(model, diagnostics);
             DetectUnexpectedModuleLoopInvariantProperties(model, diagnostics);
-            DetectUnsupportedModuleParameterAssignments(model, diagnostics);
+            DetectUnsupportedModulePropertyAssignments(model, diagnostics);
             DetectCopyVariableName(model, diagnostics);
             DetectInvalidValueForParentProperty(model, diagnostics);
             BlockLambdasOutsideFunctionArguments(model, diagnostics);
@@ -55,12 +55,17 @@ namespace Bicep.Core.Emit
             BlockNamesDistinguishedOnlyByCase(model, diagnostics);
             BlockResourceDerivedTypesThatDoNotDereferenceProperties(model, diagnostics);
             BlockSpreadInUnsupportedLocations(model, diagnostics);
+            BlockSecureOutputsWithLocalDeploy(model, diagnostics);
+            BlockSecureOutputAccessOnIndirectReference(model, diagnostics);
             BlockExtendsWithoutFeatureFlagEnabled(model, diagnostics);
+            BlockExplicitDependenciesInOrOnInlinedExistingResources(model, resourceTypeResolver, diagnostics);
+            ValidateUsingWithClauseMatchesExperimentalFeatureEnablement(model, diagnostics);
 
-            var paramAssignments = CalculateParameterAssignments(model, diagnostics);
-            var extConfigAssignments = CalculateExtensionConfigAssignments(model, diagnostics);
+            var paramAssignmentEvaluator = new ParameterAssignmentEvaluator(model);
+            var (paramAssignments, usingConfig, externalInputDefinitions) = CalculateParameterAssignments(model, paramAssignmentEvaluator, diagnostics);
+            var extConfigAssignments = CalculateExtensionConfigAssignments(model, paramAssignmentEvaluator, diagnostics);
 
-            return new(diagnostics.GetDiagnostics(), moduleScopeData, resourceScopeData, paramAssignments, extConfigAssignments);
+            return new(diagnostics.GetDiagnostics(), paramAssignments, extConfigAssignments, usingConfig, externalInputDefinitions);
         }
 
         private static void DetectDuplicateNames(SemanticModel semanticModel, IDiagnosticWriter diagnosticWriter, ImmutableDictionary<DeclaredResourceMetadata, ScopeHelper.ScopeData> resourceScopeData, ImmutableDictionary<ModuleSymbol, ScopeHelper.ScopeData> moduleScopeData)
@@ -118,7 +123,7 @@ namespace Bicep.Core.Emit
                 }
 
                 return
-                    // extensibility resources do not have an ARM ID
+                    // extension resources do not have an ARM ID
                     x?.IsAzResource is true &&
                     y?.IsAzResource is true &&
                     // ARM resource ID uniqueness is only enforced on resources with a `true` condition
@@ -413,7 +418,7 @@ namespace Bicep.Core.Emit
             }
         }
 
-        private static void DetectUnsupportedModuleParameterAssignments(SemanticModel semanticModel, IDiagnosticWriter diagnosticWriter)
+        private static void DetectUnsupportedModulePropertyAssignments(SemanticModel semanticModel, IDiagnosticWriter diagnosticWriter)
         {
             foreach (var moduleSymbol in semanticModel.Root.ModuleDeclarations)
             {
@@ -424,22 +429,16 @@ namespace Bicep.Core.Emit
                 }
 
                 var paramsValue = body.TryGetPropertyByName(LanguageConstants.ModuleParamsPropertyName)?.Value;
-                switch (paramsValue)
-                {
-                    case null:
-                    case ObjectSyntax:
-                    case SkippedTriviaSyntax:
-                        // no params, the value is an object literal, or we have parse errors
-                        // skip the module
-                        continue;
 
-                    default:
-                        // unexpected type is assigned as the value of the "params" property
-                        // we can't emit that directly because the parameters have to be converted into an object whose property values are objects with a "value" property
-                        // ideally we would add a runtime function to take care of the conversion in these cases, but it doesn't exist yet
-                        diagnosticWriter.Write(DiagnosticBuilder.ForPosition(paramsValue).ModuleParametersPropertyRequiresObjectLiteral());
-                        break;
+                if (paramsValue is not (null or ObjectSyntax or SkippedTriviaSyntax)) // we have params, it's not an object literal and not bad syntax...
+                {
+                    // unexpected type is assigned as the value of the "params" property
+                    // we can't emit that directly because the parameters have to be converted into an object whose property values are objects with a "value" property
+                    // ideally we would add a runtime function to take care of the conversion in these cases, but it doesn't exist yet
+                    diagnosticWriter.Write(DiagnosticBuilder.ForPosition(paramsValue).PropertyRequiresObjectLiteral(LanguageConstants.ModuleParamsPropertyName));
                 }
+
+                ModuleExtensionConfigsLimitations.Validate(body, semanticModel, diagnosticWriter);
             }
         }
 
@@ -599,12 +598,14 @@ namespace Bicep.Core.Emit
                 .WhereNotNull()
                 .Select(forbiddenSafeAccessMarker => DiagnosticBuilder.ForPosition(forbiddenSafeAccessMarker).SafeDereferenceNotPermittedOnResourceCollections()));
 
-        private static ImmutableDictionary<ParameterAssignmentSymbol, ParameterAssignmentValue> CalculateParameterAssignments(SemanticModel model, IDiagnosticWriter diagnostics)
+        private static (ImmutableDictionary<ParameterAssignmentSymbol, ParameterAssignmentValue> paramAssignments, ParameterAssignmentValue? usingConfig, ImmutableArray<ExternalInputDefinition>? externalInputDefinitions) CalculateParameterAssignments(
+            SemanticModel model,
+            ParameterAssignmentEvaluator evaluator,
+            IDiagnosticWriter diagnostics)
         {
-            if (model.Root.ParameterAssignments.IsEmpty ||
-                model.HasParsingErrors())
+            if (model.HasParsingErrors())
             {
-                return ImmutableDictionary<ParameterAssignmentSymbol, ParameterAssignmentValue>.Empty;
+                return ([], null, null);
             }
 
             var referencesInValues = model.Binder.Bindings.Values.OfType<DeclaredSymbol>().Distinct()
@@ -631,7 +632,6 @@ namespace Bicep.Core.Emit
                 }
             }
 
-            var evaluator = new ParameterAssignmentEvaluator(model);
             HashSet<Symbol> erroredSymbols = new();
 
             foreach (var symbol in GetTopologicallySortedSymbols(referencesInValues))
@@ -689,20 +689,25 @@ namespace Bicep.Core.Emit
                 }
             }
 
-            return generated.ToImmutableDictionary();
-        }
-
-        private static ImmutableDictionary<ExtensionConfigAssignmentSymbol, ImmutableDictionary<string, ExtensionConfigAssignmentValue>> CalculateExtensionConfigAssignments(SemanticModel model, IDiagnosticWriter diagnostics)
-        {
-            if (model.Root.ExtensionConfigAssignments.IsEmpty ||
-                model.HasParsingErrors())
+            var externalInputDefinitions = evaluator.TryGetExternalInputDefinitions();
+            ParameterAssignmentValue? usingConfig = null;
+            if (evaluator.EvaluateUsingConfig(model.Root) is { } usingConfigResult)
             {
-                return ImmutableDictionary<ExtensionConfigAssignmentSymbol, ImmutableDictionary<string, ExtensionConfigAssignmentValue>>.Empty;
+                usingConfig = new(usingConfigResult.Value, usingConfigResult.Expression, usingConfigResult.KeyVaultReference);
             }
 
-            var referencesInValues = model.Binder.Bindings.Values.OfType<DeclaredSymbol>()
-                .Distinct()
-                .ToImmutableDictionary(p => p, p => SymbolicReferenceCollector.CollectSymbolsReferenced(model.Binder, p.DeclaringSyntax));
+            return (generated.ToImmutableDictionary(), usingConfig, externalInputDefinitions);
+        }
+
+        private static ImmutableDictionary<ExtensionConfigAssignmentSymbol, ImmutableDictionary<string, ExtensionConfigAssignmentValue>> CalculateExtensionConfigAssignments(
+            SemanticModel model,
+            ParameterAssignmentEvaluator evaluator,
+            IDiagnosticWriter diagnostics)
+        {
+            if (model.Root.ExtensionConfigAssignments.IsEmpty)
+            {
+                return [];
+            }
 
             var generated = ImmutableDictionary.CreateBuilder<ExtensionConfigAssignmentSymbol, ImmutableDictionary<string, ExtensionConfigAssignmentValue>>();
 
@@ -727,60 +732,10 @@ namespace Bicep.Core.Emit
                 }
             }
 
-            var evaluator = new ParameterAssignmentEvaluator(model);
-            HashSet<Symbol> erroredSymbols = new();
+            var extensionConfigAssignmentSymbols = model.Binder.Bindings.Values.OfType<ExtensionConfigAssignmentSymbol>();
 
-            foreach (var symbol in GetTopologicallySortedSymbols(referencesInValues))
+            foreach (var extConfigAssignment in extensionConfigAssignmentSymbols)
             {
-                if (symbol.Type is ErrorType)
-                {
-                    // no point evaluating if we're already reporting an error
-                    erroredSymbols.Add(symbol);
-
-                    continue;
-                }
-
-                var referencedValueHasError = false;
-
-                foreach (var referenced in referencesInValues[symbol])
-                {
-                    if (erroredSymbols.Contains(referenced.Key))
-                    {
-                        referencedValueHasError = true;
-                    }
-                    else if (referenced.Key is ExtensionConfigAssignmentSymbol referencedExtConfigAsgmt)
-                    {
-                        foreach (var configPropertyName in generated[referencedExtConfigAsgmt].Keys)
-                        {
-                            var configValue = generated[referencedExtConfigAsgmt][configPropertyName];
-
-                            if (configValue.KeyVaultReferenceExpression is not null)
-                            {
-                                diagnostics.WriteMultiple(referenced.Value.Select(syntax => DiagnosticBuilder.ForPosition(syntax).ParameterReferencesKeyVaultSuppliedParameter(referencedExtConfigAsgmt.Name)));
-                                referencedValueHasError = true;
-                            }
-
-                            if (configValue.Value is JToken evaluated && evaluated.Type == JTokenType.Null)
-                            {
-                                diagnostics.WriteMultiple(referenced.Value.Select(syntax => DiagnosticBuilder.ForPosition(syntax).ParameterReferencesDefaultedParameter(referencedExtConfigAsgmt.Name)));
-                                referencedValueHasError = true;
-                            }
-                        }
-                    }
-                }
-
-                if (referencedValueHasError)
-                {
-                    erroredSymbols.Add(symbol);
-
-                    continue;
-                }
-
-                if (symbol is not ExtensionConfigAssignmentSymbol extConfigAssignment)
-                {
-                    continue;
-                }
-
                 var assignmentProperties = ImmutableDictionary.CreateBuilder<string, ExtensionConfigAssignmentValue>();
 
                 foreach (var (propertyName, result) in evaluator.EvaluateExtensionConfigAssignment(extConfigAssignment))
@@ -846,6 +801,22 @@ namespace Bicep.Core.Emit
             }
         }
 
+        private static void ValidateUsingWithClauseMatchesExperimentalFeatureEnablement(SemanticModel model, IDiagnosticWriter diagnostics)
+        {
+            foreach (var syntax in model.SourceFile.ProgramSyntax.Declarations.OfType<UsingDeclarationSyntax>())
+            {
+                if (syntax.WithClause is not SkippedTriviaSyntax && !model.Features.DeployCommandsEnabled)
+                {
+                    diagnostics.Write(syntax.WithClause, x => x.UsingWithClauseRequiresExperimentalFeature());
+                }
+
+                if (syntax.WithClause is SkippedTriviaSyntax && model.Features.DeployCommandsEnabled)
+                {
+                    diagnostics.Write(syntax, x => x.UsingWithClauseRequiredIfExperimentalFeatureEnabled());
+                }
+            }
+        }
+
         private static void BlockAssertsWithoutExperimentalFeatures(SemanticModel model, IDiagnosticWriter diagnostics)
         {
             foreach (var assert in model.Root.AssertDeclarations)
@@ -870,10 +841,11 @@ namespace Bicep.Core.Emit
             foreach (var (symbolTypePluralName, symbolsOfType) in new (string, IEnumerable<DeclaredSymbol>)[]
             {
                 ("parameters", model.Root.ParameterDeclarations),
-                ("variables", model.Root.VariableDeclarations),
+                ("variables", model.Root.VariableDeclarations.Concat<DeclaredSymbol>(model.Root.ImportedVariables)),
                 ("outputs", model.Root.OutputDeclarations),
-                ("types", model.Root.TypeDeclarations),
+                ("types", model.Root.TypeDeclarations.Concat<DeclaredSymbol>(model.Root.ImportedTypes)),
                 ("asserts", model.Root.AssertDeclarations),
+                ("functions", model.Root.FunctionDeclarations.Concat<DeclaredSymbol>(model.Root.ImportedFunctions))
             })
             {
                 BlockCaseInsensitiveNameClashes(symbolTypePluralName, symbolsOfType, s => s.Name, s => s.NameSource, diagnostics);
@@ -928,31 +900,7 @@ namespace Bicep.Core.Emit
 
         private static void BlockSpreadInUnsupportedLocations(SemanticModel model, IDiagnosticWriter diagnostics)
         {
-            IEnumerable<ObjectSyntax> getObjectSyntaxesToBlock()
-            {
-                foreach (var module in model.Root.ModuleDeclarations)
-                {
-                    if (module.DeclaringModule.TryGetBody() is { } body)
-                    {
-                        yield return body;
-
-                        if (body.TryGetPropertyByName(LanguageConstants.ModuleParamsPropertyName)?.Value is ObjectSyntax paramsBody)
-                        {
-                            yield return paramsBody;
-                        }
-                    }
-                }
-
-                foreach (var resource in model.Root.ResourceDeclarations)
-                {
-                    if (resource.DeclaringResource.TryGetBody() is { } body)
-                    {
-                        yield return body;
-                    }
-                }
-            }
-
-            foreach (var body in getObjectSyntaxesToBlock())
+            foreach (var body in GetObjectSyntaxesToBlockSpreadsIn(model))
             {
                 foreach (var spread in body.Children.OfType<SpreadExpressionSyntax>())
                 {
@@ -970,6 +918,143 @@ namespace Bicep.Core.Emit
                 if (parentObject.Properties.Any(x => x.Value is ForSyntax))
                 {
                     diagnostics.Write(spread, x => x.SpreadOperatorCannotBeUsedWithForLoop(spread));
+                }
+
+                if (model.Binder.GetParent(parentObject) is ExtensionWithClauseSyntax)
+                {
+                    diagnostics.Write(spread, x => x.SpreadOperatorUnsupportedInLocation(spread));
+                }
+            }
+        }
+
+        private static void BlockSecureOutputsWithLocalDeploy(SemanticModel model, IDiagnosticWriter diagnostics)
+        {
+            if (model.TargetScope != ResourceScope.Local)
+            {
+                return;
+            }
+
+            foreach (var module in model.Root.ModuleDeclarations)
+            {
+                if (module.TryGetSemanticModel().TryUnwrap() is { } moduleModel &&
+                    moduleModel.Outputs.Any(output => output.IsSecure))
+                {
+                    diagnostics.Write(DiagnosticBuilder.ForPosition(module.NameSource).SecureOutputsNotSupportedWithLocalDeploy(module.Name));
+                }
+            }
+        }
+
+        private static void BlockSecureOutputAccessOnIndirectReference(
+            SemanticModel model,
+            IDiagnosticWriter diagnostics)
+        {
+            // we're looking for access expressions...
+            foreach (var accessExpr in SyntaxAggregator.AggregateByType<AccessExpressionSyntax>(model.Root.Syntax))
+            {
+                // ... whose base expression is a match for `<something>.outputs`
+                if (accessExpr.BaseExpression is AccessExpressionSyntax baseAccessExpr &&
+                    baseAccessExpr.AccessExpressionMatches(
+                        SyntaxFactory.CreateStringLiteral(LanguageConstants.ModuleOutputsPropertyName)) &&
+                    // ... and whose base expression is a module...
+                    TypeHelper.SatisfiesCondition(model.GetTypeInfo(baseAccessExpr.BaseExpression), t => t is ModuleType) &&
+                    // ... when the type of the output dereferenced would trigger the use of `listOutputsWithSecureValues`
+                    TypeHelper.IsOrContainsSecureType(model.GetTypeInfo(accessExpr)))
+                {
+                    if (model.GetSymbolInfo(baseAccessExpr.BaseExpression) is ModuleSymbol ||
+                        (SyntaxHelper.UnwrapNonNullAssertion(baseAccessExpr.BaseExpression) is ArrayAccessSyntax grandBaseArrayAccess &&
+                            model.GetSymbolInfo(grandBaseArrayAccess.BaseExpression) is ModuleSymbol greatGrandBaseModule &&
+                            greatGrandBaseModule.IsCollection))
+                    {
+                        // if the module reference is **direct** (e.g., `mod.outputs.sensitive` or
+                        // `mod[0].outputs.sensitive`, don't raise a diagnostic
+                        continue;
+                    }
+
+                    diagnostics.Write(DiagnosticBuilder.ForPosition(accessExpr.IndexExpression)
+                        .SecureOutputsOnlyAllowedOnDirectModuleReference());
+                }
+            }
+        }
+
+        private static void BlockExplicitDependenciesInOrOnInlinedExistingResources(
+            SemanticModel model,
+            ResourceTypeResolver resolver,
+            IDiagnosticWriter diagnostics)
+        {
+            static IEnumerable<string> GetRuntimeIdentifierProperties(ResourceTypeResolver resolver, ResourceSymbol resource)
+                => resolver.TryGetBodyObjectType(resource)?.Properties
+                    .Where(kvp => AzResourceTypeProvider.UniqueIdentifierProperties.Contains(kvp.Key) &&
+                        !kvp.Value.Flags.HasFlag(TypePropertyFlags.ReadableAtDeployTime))
+                    .Select(kvp => kvp.Key) ?? [];
+
+            foreach (var resourceDeclaration in model.Root.ResourceDeclarations)
+            {
+                if (resourceDeclaration.TryGetBodyProperty(LanguageConstants.ResourceDependsOnPropertyName)
+                    is { } explicitDependencies)
+                {
+                    if (model.SymbolsToInline.ExistingResourcesToInline.Contains(resourceDeclaration))
+                    {
+                        // inlined resources can't have explicit dependencies
+                        diagnostics.Write(DiagnosticBuilder.ForPosition(explicitDependencies)
+                            .InlinedResourcesCannotHaveExplicitDependencies(
+                                resourceDeclaration.Name,
+                                GetRuntimeIdentifierProperties(resolver, resourceDeclaration)));
+                    }
+                    else
+                    {
+                        foreach (var (inlinedResource, explicitDependency) in SymbolicReferenceCollector
+                            .CollectSymbolsReferenced(model.Binder, explicitDependencies.Value)
+                            .SelectMany(kvp => kvp.Key is ResourceSymbol r && model.SymbolsToInline.ExistingResourcesToInline.Contains(r)
+                                ? kvp.Value.Select(syntax => (r, syntax))
+                                : []))
+                        {
+                            diagnostics.Write(DiagnosticBuilder.ForPosition(explicitDependency)
+                                .CannotExplicitlyDependOnInlinedResource(
+                                    resourceDeclaration.Name,
+                                    inlinedResource.Name,
+                                    GetRuntimeIdentifierProperties(resolver, inlinedResource)));
+                        }
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<ObjectSyntax> GetObjectSyntaxesToBlockSpreadsIn(SemanticModel model)
+        {
+            foreach (var module in model.Root.ModuleDeclarations)
+            {
+                if (module.DeclaringModule.TryGetBody() is not { } body)
+                {
+                    continue;
+                }
+
+                yield return body;
+
+                if (body.TryGetPropertyByName(LanguageConstants.ModuleParamsPropertyName)?.Value is ObjectSyntax paramsBody)
+                {
+                    yield return paramsBody;
+                }
+
+                if (model.Features.ModuleExtensionConfigsEnabled && body.TryGetPropertyByName(LanguageConstants.ModuleExtensionConfigsPropertyName)?.Value is ObjectSyntax extensionsBody)
+                {
+                    yield return extensionsBody;
+
+                    // Contract is Dictionary<string, Dictionary<string, DeploymentExtensionConfigItem>>
+                    foreach (var extConfigObjProp in extensionsBody.Properties)
+                    {
+                        if (extConfigObjProp.Value is ObjectSyntax extConfigObj)
+                        {
+                            yield return extConfigObj;
+                        }
+                    }
+                }
+            }
+
+            foreach (var resource in model.Root.ResourceDeclarations)
+            {
+                if (resource.DeclaringResource.TryGetBody() is { } body)
+                {
+                    yield return body;
                 }
             }
         }

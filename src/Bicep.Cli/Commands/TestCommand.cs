@@ -13,38 +13,42 @@ namespace Bicep.Cli.Commands
 {
     public class TestCommand : ICommand
     {
+        private const string SuccessSymbol = "[✓]";
+        private const string FailureSymbol = "[✗]";
+        private const string SkippedSymbol = "[-]";
+
         private readonly ILogger logger;
         private readonly IOContext io;
         private readonly DiagnosticLogger diagnosticLogger;
         private readonly BicepCompiler compiler;
         private readonly IFeatureProviderFactory featureProviderFactory;
-        private const string SuccessSymbol = "[✓]";
-        private const string FailureSymbol = "[✗]";
-        private const string SkippedSymbol = "[-]";
+        private readonly InputOutputArgumentsResolver inputOutputArgumentsResolver;
 
         public TestCommand(
             IOContext io,
             ILogger logger,
             DiagnosticLogger diagnosticLogger,
             BicepCompiler compiler,
-            IFeatureProviderFactory featureProviderFactory)
+            IFeatureProviderFactory featureProviderFactory,
+            InputOutputArgumentsResolver inputOutputArgumentsResolver)
         {
             this.logger = logger;
             this.diagnosticLogger = diagnosticLogger;
             this.compiler = compiler;
             this.featureProviderFactory = featureProviderFactory;
             this.io = io;
+            this.inputOutputArgumentsResolver = inputOutputArgumentsResolver;
         }
 
         public async Task<int> RunAsync(TestArguments args)
         {
-            var inputUri = ArgumentHelper.GetFileUri(args.InputFile);
+            var inputUri = this.inputOutputArgumentsResolver.ResolveInputArguments(args);
             ArgumentHelper.ValidateBicepFile(inputUri);
             var features = featureProviderFactory.GetFeatureProvider(inputUri);
 
             if (!features.TestFrameworkEnabled)
             {
-                await io.Error.WriteLineAsync("TestFrameWork not enabled");
+                await io.Error.Writer.WriteLineAsync("TestFrameWork not enabled");
 
                 return 1;
             }
@@ -72,30 +76,30 @@ namespace Bicep.Cli.Commands
             {
                 if (evaluation.Success)
                 {
-                    io.Output.WriteLine($"{SuccessSymbol} Evaluation {testDeclaration.Name} Passed!");
+                    io.Output.Writer.WriteLine($"{SuccessSymbol} Evaluation {testDeclaration.Name} Passed!");
                 }
                 else if (evaluation.Skip)
                 {
-                    io.Error.WriteLine($"{SkippedSymbol} Evaluation {testDeclaration.Name} Skipped!");
-                    io.Error.WriteLine($"Reason: {evaluation.Error}");
+                    io.Error.Writer.WriteLine($"{SkippedSymbol} Evaluation {testDeclaration.Name} Skipped!");
+                    io.Error.Writer.WriteLine($"Reason: {evaluation.Error}");
                 }
                 else
                 {
-                    io.Error.WriteLine($"{FailureSymbol} Evaluation {testDeclaration.Name} Failed at {evaluation.FailedAssertions.Length} / {evaluation.AllAssertions.Length} assertions!");
+                    io.Error.Writer.WriteLine($"{FailureSymbol} Evaluation {testDeclaration.Name} Failed at {evaluation.FailedAssertions.Length} / {evaluation.AllAssertions.Length} assertions!");
                     foreach (var (assertion, _) in evaluation.FailedAssertions)
                     {
-                        io.Error.WriteLine($"\t{FailureSymbol} Assertion {assertion} failed!");
+                        io.Error.Writer.WriteLine($"\t{FailureSymbol} Assertion {assertion} failed!");
                     }
                 }
             }
             if (testResults.Success)
             {
-                io.Output.WriteLine($"All {testResults.TotalEvaluations} evaluations passed!");
+                io.Output.Writer.WriteLine($"All {testResults.TotalEvaluations} evaluations passed!");
             }
             else
             {
-                io.Error.WriteLine($"Evaluation Summary: Failure!");
-                io.Error.WriteLine($"Total: {testResults.TotalEvaluations} - Success: {testResults.SuccessfulEvaluations} - Skipped: {testResults.SkippedEvaluations} - Failed: {testResults.FailedEvaluations}");
+                io.Error.Writer.WriteLine($"Evaluation Summary: Failure!");
+                io.Error.Writer.WriteLine($"Total: {testResults.TotalEvaluations} - Success: {testResults.SuccessfulEvaluations} - Skipped: {testResults.SkippedEvaluations} - Failed: {testResults.FailedEvaluations}");
             }
         }
 

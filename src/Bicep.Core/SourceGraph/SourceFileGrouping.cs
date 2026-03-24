@@ -19,10 +19,10 @@ public record ImplicitExtension(
     ArtifactResolutionInfo? Artifact);
 
 public record ArtifactResolutionInfo(
-    BicepSourceFile Origin,
+    BicepSourceFile ReferencingFile,
     IArtifactReferenceSyntax? Syntax,
     ArtifactReference? Reference,
-    ResultWithDiagnosticBuilder<Uri> Result,
+    ResultWithDiagnosticBuilder<IFileHandle> Result,
     bool RequiresRestore);
 
 public record SourceFileGrouping(
@@ -31,7 +31,7 @@ public record SourceFileGrouping(
     ImmutableDictionary<ISourceFile, ImmutableHashSet<ISourceFile>> SourceFileParentLookup,
     ImmutableDictionary<IArtifactReferenceSyntax, ArtifactResolutionInfo> ArtifactLookup,
     ImmutableDictionary<ISourceFile, ImmutableHashSet<ImplicitExtension>> ImplicitExtensions,
-    ImmutableDictionary<Uri, ResultWithDiagnosticBuilder<ISourceFile>> SourceFileLookup) : IArtifactFileLookup
+    ImmutableDictionary<IOUri, ResultWithDiagnosticBuilder<ISourceFile>> SourceFileLookup) : IArtifactFileLookup
 {
     public IEnumerable<ArtifactResolutionInfo> GetArtifactsToRestore(bool force = false)
     {
@@ -56,12 +56,12 @@ public record SourceFileGrouping(
 
     public ResultWithDiagnosticBuilder<ISourceFile> TryGetSourceFile(IArtifactReferenceSyntax reference)
     {
-        if (!ArtifactLookup[reference].Result.IsSuccess(out var fileUri, out var errorBuilder))
+        if (!ArtifactLookup[reference].Result.IsSuccess(out var fileHandle, out var errorBuilder))
         {
             return new(errorBuilder);
         }
 
-        return SourceFileLookup[fileUri];
+        return SourceFileLookup[fileHandle.Uri];
     }
 
     public FrozenSet<ISourceFile> GetSourceFilesDependingOn(ISourceFile sourceFile)

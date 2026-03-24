@@ -23,8 +23,6 @@ public class OverriddenFeatureProvider : IFeatureProvider
 
     public bool SymbolicNameCodegenEnabled => overrides.SymbolicNameCodegenEnabled ?? features.SymbolicNameCodegenEnabled;
 
-    public bool ExtensibilityEnabled => overrides.ExtensibilityEnabled ?? features.ExtensibilityEnabled;
-
     public bool ResourceTypedParamsAndOutputsEnabled => overrides.ResourceTypedParamsAndOutputsEnabled ?? features.ResourceTypedParamsAndOutputsEnabled;
 
     public bool SourceMappingEnabled => overrides.SourceMappingEnabled ?? features.SourceMappingEnabled;
@@ -37,19 +35,19 @@ public class OverriddenFeatureProvider : IFeatureProvider
 
     public bool WaitAndRetryEnabled => overrides.WaitAndRetryEnabled ?? features.WaitAndRetryEnabled;
 
-    public bool OnlyIfNotExistsEnabled => overrides.OnlyIfNotExistsEnabled ?? features.OnlyIfNotExistsEnabled;
-
     public bool LocalDeployEnabled => overrides.LocalDeployEnabled ?? features.LocalDeployEnabled;
 
     public bool ResourceInfoCodegenEnabled => overrides.ResourceInfoCodegenEnabled ?? features.ResourceInfoCodegenEnabled;
 
     public bool ExtendableParamFilesEnabled => overrides.ExtendableParamFilesEnabled ?? features.ExtendableParamFilesEnabled;
 
-    public bool ExtensibilityV2EmittingEnabled => ModuleExtensionConfigsEnabled || (overrides.ExtensibilityV2EmittingEnabled ?? features.ExtensibilityV2EmittingEnabled);
-
     public bool ModuleExtensionConfigsEnabled => overrides.ModuleExtensionConfigsEnabled ?? features.ModuleExtensionConfigsEnabled;
 
-    public bool DesiredStateConfigurationEnabled => overrides.DesiredStateConfigurationEnabled ?? features.DesiredStateConfigurationEnabled;
+    public bool UserDefinedConstraintsEnabled => overrides.UserDefinedConstraintsEnabled ?? features.UserDefinedConstraintsEnabled;
 
-    public bool ExternalInputFunctionEnabled => overrides.ExternalInputFunctionEnabled ?? features.ExternalInputFunctionEnabled;
+    public bool DeployCommandsEnabled => overrides.DeployCommandsEnabled ?? features.DeployCommandsEnabled;
+
+    public bool ThisNamespaceEnabled => overrides.ThisNamespaceEnabled ?? features.ThisNamespaceEnabled;
+
+    public bool ExistingNullIfNotFoundEnabled => overrides.ExistingNullIfNotFoundEnabled ?? features.ExistingNullIfNotFoundEnabled;
 }

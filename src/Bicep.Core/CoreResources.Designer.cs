@@ -178,42 +178,6 @@ namespace Bicep.Core {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Extensibility.
-        /// </summary>
-        internal static string ExperimentalFeatureNames_Extensibility {
-            get {
-                return ResourceManager.GetString("ExperimentalFeatureNames_Extensibility", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to External input function.
-        /// </summary>
-        internal static string ExperimentalFeatureNames_ExternalInputFunction {
-            get {
-                return ResourceManager.GetString("ExperimentalFeatureNames_ExternalInputFunction", resourceCulture);
-            }
-        }
-
-        /// <summary>
-        ///   Looks up a localized string similar to Enable OnlyIfNotExists feature.
-        /// </summary>
-        internal static string ExperimentalFeatureNames_OnlyIfNotExists {
-            get {
-                return ResourceManager.GetString("ExperimentalFeatureNames_OnlyIfNotExists", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Resource-derived types.
-        /// </summary>
-        internal static string ExperimentalFeatureNames_ResourceDerivedTypes {
-            get {
-                return ResourceManager.GetString("ExperimentalFeatureNames_ResourceDerivedTypes", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Looks up a localized string similar to Resource info code generation.
         /// </summary>
         internal static string ExperimentalFeatureNames_ResourceInfoCodegen {
@@ -264,6 +228,24 @@ namespace Bicep.Core {
         internal static string ExperimentalFeatureNames_WaitAndRetry {
             get {
                 return ResourceManager.GetString("ExperimentalFeatureNames_WaitAndRetry", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to All imports must be used..
+        /// </summary>
+        internal static string ImportMustBeUsedRuleDescription {
+            get {
+                return ResourceManager.GetString("ImportMustBeUsedRuleDescription", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Import &quot;{0}&quot; is declared but never used..
+        /// </summary>
+        internal static string ImportMustBeUsedRuleMessageFormat {
+            get {
+                return ResourceManager.GetString("ImportMustBeUsedRuleMessageFormat", resourceCulture);
             }
         }
         
@@ -435,6 +417,15 @@ namespace Bicep.Core {
         internal static string NoDeploymentsResourcesRuleMessageFormat {
             get {
                 return ResourceManager.GetString("NoDeploymentsResourcesRuleMessageFormat", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Avoid using an explicit &apos;any&apos; type whenever possible..
+        /// </summary>
+        internal static string NoExplicitAnyRule_Description {
+            get {
+                return ResourceManager.GetString("NoExplicitAnyRule_Description", resourceCulture);
             }
         }
         
@@ -817,6 +808,33 @@ namespace Bicep.Core {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Non-secure config property values must be a value type to be valid for Deployment stack deployments..
+        /// </summary>
+        internal static string StacksExtensibilityCompatibilityRule_NonSecurePropertyValueIsReference {
+            get {
+                return ResourceManager.GetString("StacksExtensibilityCompatibilityRule_NonSecurePropertyValueIsReference", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Secure config property values must be a key vault reference to be valid for Deployment stack deployments..
+        /// </summary>
+        internal static string StacksExtensibilityCompatibilityRule_SecurePropertyValueIsNotReference {
+            get {
+                return ResourceManager.GetString("StacksExtensibilityCompatibilityRule_SecurePropertyValueIsNotReference", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Extensibility for deployments has additional constraints for Deployment stack deployments..
+        /// </summary>
+        internal static string StacksExtensibilityCompatibilityRuleDescription {
+            get {
+                return ResourceManager.GetString("StacksExtensibilityCompatibilityRuleDescription", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to All existing resources must be used..
         /// </summary>
         internal static string UnusedExistingResourceRuleDescription {
@@ -966,6 +984,24 @@ namespace Bicep.Core {
         internal static string UseRecentApiVersionRule_UnknownVersion {
             get {
                 return ResourceManager.GetString("UseRecentApiVersionRule_UnknownVersion", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Use AzPowerShell version 11.0 or higher in deployment scripts to avoid EOL Ubuntu 20.04 LTS.
+        /// </summary>
+        internal static string UseRecentAzPowerShellVersionRuleDescription {
+            get {
+                return ResourceManager.GetString("UseRecentAzPowerShellVersionRuleDescription", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Deployment script is using AzPowerShell version &apos;{0}&apos; which is below the recommended minimum version &apos;{1}&apos;. Consider upgrading to version 11.0 or higher to avoid EOL Ubuntu 20.04 LTS..
+        /// </summary>
+        internal static string UseRecentAzPowerShellVersionRuleMessageFormat {
+            get {
+                return ResourceManager.GetString("UseRecentAzPowerShellVersionRuleMessageFormat", resourceCulture);
             }
         }
         
@@ -1123,7 +1159,7 @@ namespace Bicep.Core {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Property &quot;{0}&quot; expects a secure value, but the value provided may not be secure..
+        ///   Looks up a localized string similar to Property &apos;{0}&apos; expects a secure value, but the value provided may not be secure..
         /// </summary>
         internal static string UseSecureValueForSecureInputsRule_MessageFormat {
             get {
@@ -1186,7 +1222,7 @@ namespace Bicep.Core {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Runtime value &apos;{0}&apos; will reduce the precision of what-if analysis for module &apos;{1}&apos;.
+        ///   Looks up a localized string similar to Parameter &apos;{0}&apos; is used as a resource identifier, API version, or condition in the module &apos;{1}&apos;. Providing a runtime value for this parameter will lead to short-circuiting or less precise predictions in What-If..
         /// </summary>
         internal static string WhatIfShortCircuitingRuleMessageFormat {
             get {

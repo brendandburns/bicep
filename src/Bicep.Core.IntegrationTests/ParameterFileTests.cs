@@ -5,7 +5,6 @@ using System.Diagnostics.CodeAnalysis;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.UnitTests;
 using Bicep.Core.UnitTests.Assertions;
-using Bicep.Core.UnitTests.Features;
 using Bicep.Core.UnitTests.Utils;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -17,10 +16,6 @@ namespace Bicep.Core.IntegrationTests;
 [TestClass]
 public class ParameterFileTests
 {
-    private ServiceBuilder ServicesWithExternalInputFunctionEnabled =>
-        new ServiceBuilder()
-            .WithFeatureOverrides(new FeatureProviderOverrides(TestContext, ExternalInputFunctionEnabled: true));
-
     [NotNull]
     public TestContext? TestContext { get; set; }
 
@@ -103,8 +98,9 @@ param fromEnv=readEnvironmentVariable('stringEnvVariable')
 ("foo.bicep", @"param fromEnv string"));
 
         result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]{
-                ("BCP338", DiagnosticLevel.Error,
-                "Failed to evaluate parameter \"fromEnv\": Environment variable \"stringEnvVariable\" does not exist, and no default value set.")});
+            ("BCP427", DiagnosticLevel.Error,
+                "Environment variable \"stringEnvVariable\" does not exist and there's no default value set.")
+        });
     }
 
     [TestMethod]
@@ -128,7 +124,7 @@ param fromEnv=readEnvironmentVariable('stringEnvVariable')
 "),
 ("foo.bicep", @"param fromEnv string"));
 
-        result.Should().ContainDiagnostic("BCP338", DiagnosticLevel.Error, "Failed to evaluate parameter \"fromEnv\": Environment variable \"stringEnvVariable\" does not exist, and no default value set.");
+        result.Should().ContainDiagnostic("BCP427", DiagnosticLevel.Error, "Environment variable \"stringEnvVariable\" does not exist and there's no default value set.");
         result.Should().ContainDiagnostic("Bicepparam ReadEnvironmentVariable function", DiagnosticLevel.Info, "Available environment variables are: ");
     }
     [TestMethod]
@@ -246,10 +242,9 @@ invalid file
     }
 
     [TestMethod]
-    public void ExternalInput_assigned_to_parameter_without_config()
+    public void ExternalInput_without_config_compiles_successfully()
     {
         var result = CompilationHelper.CompileParams(
-            ServicesWithExternalInputFunctionEnabled,
 ("parameters.bicepparam", @"
 using none
 param foo = externalInput('my.param.provider')
@@ -268,19 +263,30 @@ param foo = externalInput('my.param.provider')
     }
 
     [TestMethod]
-    public void ExternalInput_assigned_to_parameter_with_config()
+    public void ExternalInput_with_config_compiles_successfully()
     {
         var result = CompilationHelper.CompileParams(
-            ServicesWithExternalInputFunctionEnabled,
 ("parameters.bicepparam", @"
 using none
 param foo = externalInput('sys.cli', 'foo')
+param bar = externalInput('my.param.provider', {
+    key: 'value'
+    key2: 42
+})
+param baz = externalInput('my.provider', 42)
+param qux = externalInput('is.this.a.provider', false)
 "));
 
         result.Should().NotHaveAnyDiagnostics();
         var parameters = TemplateHelper.ConvertAndAssertParameters(result.Parameters);
         parameters["foo"].Value.Should().BeNull();
         parameters["foo"].Expression.Should().DeepEqual("""[externalInputs('sys_cli_0')]""");
+        parameters["bar"].Value.Should().BeNull();
+        parameters["bar"].Expression.Should().DeepEqual("""[externalInputs('my_param_provider_1')]""");
+        parameters["baz"].Value.Should().BeNull();
+        parameters["baz"].Expression.Should().DeepEqual("""[externalInputs('my_provider_2')]""");
+        parameters["qux"].Value.Should().BeNull();
+        parameters["qux"].Expression.Should().DeepEqual("""[externalInputs('is_this_a_provider_3')]""");
 
         var externalInputs = TemplateHelper.ConvertAndAssertExternalInputs(result.Parameters);
         externalInputs["sys_cli_0"].Should().DeepEqual(new JObject
@@ -288,13 +294,31 @@ param foo = externalInput('sys.cli', 'foo')
             ["kind"] = "sys.cli",
             ["config"] = "foo",
         });
+        externalInputs["my_param_provider_1"].Should().DeepEqual(new JObject
+        {
+            ["kind"] = "my.param.provider",
+            ["config"] = new JObject
+            {
+                ["key"] = "value",
+                ["key2"] = 42,
+            },
+        });
+        externalInputs["my_provider_2"].Should().DeepEqual(new JObject
+        {
+            ["kind"] = "my.provider",
+            ["config"] = 42,
+        });
+        externalInputs["is_this_a_provider_3"].Should().DeepEqual(new JObject
+        {
+            ["kind"] = "is.this.a.provider",
+            ["config"] = false,
+        });
     }
 
     [TestMethod]
-    public void ExternalInput_parameter_with_variable_references()
+    public void ExternalInput_parameter_with_variable_references_compiles_successfully()
     {
         var result = CompilationHelper.CompileParams(
-            ServicesWithExternalInputFunctionEnabled,
 ("parameters.bicepparam", @"
 using none
 var foo = externalInput('sys.cli', 'foo')
@@ -321,28 +345,123 @@ param foo3 = foo2
     }
 
     [TestMethod]
-    public void No_parameters_containing_external_input_should_not_generate_external_input_definitions()
+    public void ExternalInput_parameter_with_non_external_input_variable_references_compiles_successfully()
     {
         var result = CompilationHelper.CompileParams(
-            ServicesWithExternalInputFunctionEnabled,
 ("parameters.bicepparam", @"
 using none
-param foo = 'foo'
-var baz = externalInput('sys.cli', 'baz')
+var foo = 'foo'
+param foo2 = '${foo}-${externalInput('sys.cli', 'foo2')}'
 "));
 
-        result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
+        result.Should().NotHaveAnyDiagnostics();
         var parameters = TemplateHelper.ConvertAndAssertParameters(result.Parameters);
-        parameters["foo"].Value.Should().DeepEqual("foo");
-        parameters["foo"].Expression.Should().BeNull();
-        result.Parameters.Should().NotHaveValueAtPath("$.externalInputDefinitions");
+        parameters["foo2"].Value.Should().BeNull();
+        parameters["foo2"].Expression.Should().DeepEqual("""[format('{0}-{1}', 'foo', externalInputs('sys_cli_0'))]""");
+
+        var externalInputs = TemplateHelper.ConvertAndAssertExternalInputs(result.Parameters);
+        externalInputs["sys_cli_0"].Should().DeepEqual(new JObject
+        {
+            ["kind"] = "sys.cli",
+            ["config"] = "foo2",
+        });
     }
 
     [TestMethod]
-    public void ExternalInput_parameter_with_param_references()
+    public void ExternalInput_parameter_with_non_existent_symbol_reference_should_return_diagnostics()
     {
         var result = CompilationHelper.CompileParams(
-            ServicesWithExternalInputFunctionEnabled,
+("main.bicep", @"
+"),
+("parameters.bicepparam", @"
+using none
+import { foo } from 'main.bicep' // foo doesn't exist in main.bicep
+param bar = '${foo}-${externalInput('test')}'
+var baz = foo('test')
+param qux = externalInput('kind', baz)
+param bar2 = externalInput('kind', foo)
+"));
+
+        result.Should().HaveDiagnostics(
+            [
+                ("BCP360", DiagnosticLevel.Error, "The 'foo' symbol was not found in (or was not exported by) the imported template."),
+                ("BCP063", DiagnosticLevel.Error, "The name \"foo\" is not a parameter, variable, resource or module."),
+                ("BCP059", DiagnosticLevel.Error, "The name \"foo\" is not a function."),
+                ("BCP062", DiagnosticLevel.Error, "The referenced declaration with name \"baz\" is not valid."),
+                ("BCP063", DiagnosticLevel.Error, "The name \"foo\" is not a parameter, variable, resource or module."),
+            ]);
+
+    }
+
+    [TestMethod]
+    public void ExternalInput_parameter_with_unevaluable_imported_variable_references_returns_diagnostic()
+    {
+        var result = CompilationHelper.CompileParams(
+            ("parameters.bicepparam", @"
+    using none
+    import { foo } from 'main.bicep'
+    param foo2 = '${foo}-${externalInput('sys.cli', 'foo2')}'
+    "),
+            ("main.bicep", @"
+    @export()
+    var foo = resourceGroup().location // cannot be evaluated in bicepparam file
+    "));
+        result.Should().OnlyContainDiagnostic(
+            "BCP338",
+            DiagnosticLevel.Error,
+            "Failed to evaluate parameter \"foo2\": Failed to evaluate variable \"foo\": The template function 'RESOURCEGROUP' is not expected at this location. Please see https://aka.ms/arm-functions for usage details.");
+    }
+
+    [TestMethod]
+    public void ExternalInput_parameter_with_imported_function_compiles_successfully()
+    {
+        var result = CompilationHelper.CompileParams(
+("parameters.bicepparam", @"
+    using none
+    import { foo } from 'main.bicep'
+    param foo2 = '${foo()}-${externalInput('sys.cli', 'foo2')}'
+    "),
+("main.bicep", @"
+    @export()
+    func foo() string => 'Hello foo'
+    "));
+
+        result.Should().NotHaveAnyDiagnostics();
+        var parameters = TemplateHelper.ConvertAndAssertParameters(result.Parameters);
+        parameters["foo2"].Value.Should().BeNull();
+        parameters["foo2"].Expression.Should().DeepEqual("""[format('{0}-{1}', 'Hello foo', externalInputs('sys_cli_0'))]""");
+
+        var externalInputs = TemplateHelper.ConvertAndAssertExternalInputs(result.Parameters);
+        externalInputs["sys_cli_0"].Should().DeepEqual(new JObject
+        {
+            ["kind"] = "sys.cli",
+            ["config"] = "foo2",
+        });
+    }
+
+    [TestMethod]
+    public void ExternalInput_parameter_with_unevaluable_imported_function_returns_diagnostics()
+    {
+        var result = CompilationHelper.CompileParams(
+            ("parameters.bicepparam", @"
+    using none
+    import { foo } from 'main.bicep'
+    param foo2 = '${foo()}-${externalInput('sys.cli', 'foo2')}'
+    "),
+            ("main.bicep", @"
+    @export()
+    func foo() string => resourceGroup().location // cannot be evaluated in bicepparam file
+    "));
+        result.Should().OnlyContainDiagnostic(
+            "BCP338",
+            DiagnosticLevel.Error,
+            "Failed to evaluate parameter \"foo2\": The template function 'RESOURCEGROUP' is not expected at this location. Please see https://aka.ms/arm-functions for usage details.");
+    }
+
+    [TestMethod]
+    public void ExternalInput_parameter_with_param_references_compiles_successfully()
+    {
+        var result = CompilationHelper.CompileParams(
 ("parameters.bicepparam", @"
 using none
 param foo = externalInput('sys.cli', 'foo')
@@ -370,10 +489,9 @@ param foo3 = foo2
     }
 
     [TestMethod]
-    public void ExternalInput_parameter_with_cyclic_references()
+    public void ExternalInput_parameter_with_cyclic_references_returns_errors()
     {
         var result = CompilationHelper.CompileParams(
-            ServicesWithExternalInputFunctionEnabled,
 ("parameters.bicepparam", @"
 using none
 param a = '${b}-${externalInput('sys.cli', 'a')}'
@@ -395,7 +513,6 @@ param c = b
     public void ExternalInput_non_compile_time_constant_is_blocked()
     {
         var result = CompilationHelper.CompileParams(
-            ServicesWithExternalInputFunctionEnabled,
 ("parameters.bicepparam", @"
 using none
 var myVar = 2 + 3
@@ -413,7 +530,6 @@ param foo = externalInput('sys.cli', myVar)
     public void ExternalInput_emits_top_level_expression()
     {
         var result = CompilationHelper.CompileParams(
-            ServicesWithExternalInputFunctionEnabled,
 ("parameters.bicepparam", @"
 using none
 param foo = {
@@ -430,6 +546,42 @@ param foo = {
         externalInputs["my_param_provider_0"].Should().DeepEqual(new JObject
         {
             ["kind"] = "my.param.provider",
+        });
+    }
+
+    [TestMethod]
+    public void ExternalInput_alternative_functions_also_generate_external_inputs()
+    {
+        var services = new ServiceBuilder().WithFeatureOverrides(new(TestContext, DeployCommandsEnabled: true));
+        var result = CompilationHelper.CompileParams(
+            services,
+            ("parameters.bicepparam", """
+                using 'main.bicep' with {
+                  mode: 'deployment'
+                  scope: '/subscriptions/foo/resourceGroups/bar'
+                }
+                var foo = readCliArg('foo')
+                var foo2 = '${foo}-${readEnvVar('foo2')}'
+                param foo3 = foo2
+                """), ("main.bicep", """
+                param foo3 string
+                """));
+
+        result.Should().NotHaveAnyDiagnostics();
+        var parameters = TemplateHelper.ConvertAndAssertParameters(result.Parameters);
+        parameters["foo3"].Value.Should().BeNull();
+        parameters["foo3"].Expression.Should().DeepEqual("""[format('{0}-{1}', externalInputs('sys_cliArg_0'), externalInputs('sys_envVar_1'))]""");
+
+        var externalInputs = TemplateHelper.ConvertAndAssertExternalInputs(result.Parameters);
+        externalInputs["sys_cliArg_0"].Should().DeepEqual(new JObject
+        {
+            ["kind"] = "sys.cliArg",
+            ["config"] = "foo",
+        });
+        externalInputs["sys_envVar_1"].Should().DeepEqual(new JObject
+        {
+            ["kind"] = "sys.envVar",
+            ["config"] = "foo2",
         });
     }
 }

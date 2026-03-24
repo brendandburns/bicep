@@ -5,10 +5,11 @@ using System.Text;
 using Bicep.Core.Configuration;
 using Bicep.Core.Extensions;
 using Bicep.Core.Features;
-using Bicep.Core.FileSystem;
 using Bicep.Core.Registry;
 using Bicep.Core.SourceGraph;
 using Bicep.Core.Syntax;
+using Bicep.Core.Utils;
+using Bicep.IO.Abstraction;
 using Bicep.LanguageServer.CompilationManager;
 using OmniSharp.Extensions.JsonRpc;
 using OmniSharp.Extensions.LanguageServer.Protocol;
@@ -20,22 +21,22 @@ namespace Bicep.LanguageServer.Handlers
     // It returns Restore (force) succeeded/failed message, which can be displayed appropriately in IDE output window
     public class BicepForceModulesRestoreCommandHandler : ExecuteTypedResponseCommandHandlerBase<DocumentUri, string>
     {
-        private readonly IFileResolver fileResolver;
+        private readonly IFileExplorer fileExplorer;
         private readonly IModuleDispatcher moduleDispatcher;
         private readonly ICompilationManager compilationManager;
-        private readonly IWorkspace workspace;
+        private readonly IActiveSourceFileSet workspace;
         private readonly ISourceFileFactory sourceFileFactory;
 
         public BicepForceModulesRestoreCommandHandler(
             ISerializer serializer,
-            IFileResolver fileResolver,
+            IFileExplorer fileExplorer,
             IModuleDispatcher moduleDispatcher,
             ICompilationManager compilationManager,
-            IWorkspace workspace,
+            IActiveSourceFileSet workspace,
             ISourceFileFactory sourceFileFactory)
             : base(LangServerConstants.ForceModulesRestoreCommand, serializer)
         {
-            this.fileResolver = fileResolver;
+            this.fileExplorer = fileExplorer;
             this.moduleDispatcher = moduleDispatcher;
             this.compilationManager = compilationManager;
             this.workspace = workspace;
@@ -49,10 +50,10 @@ namespace Bicep.LanguageServer.Handlers
 
         private async Task<string> ForceModulesRestoreAndGenerateOutputMessage(DocumentUri documentUri)
         {
-            var fileUri = documentUri.ToUriEncoded();
+            var fileUri = documentUri.ToIOUri();
 
             var sourceFileGrouping = SourceFileGroupingBuilder.Build(
-                this.fileResolver,
+                this.fileExplorer,
                 this.moduleDispatcher,
                 this.workspace,
                 this.sourceFileFactory,
@@ -79,11 +80,11 @@ namespace Bicep.LanguageServer.Handlers
             foreach (var module in artifactReferencesToRestore)
             {
                 var restoreStatus = this.moduleDispatcher.GetArtifactRestoreStatus(module, out _);
-                sbRestoreSummary.Append($"{Environment.NewLine}  * {module.FullyQualifiedReference}: {restoreStatus}");
+                sbRestoreSummary.Append($"{System.Environment.NewLine}  * {module.FullyQualifiedReference}: {restoreStatus}");
             }
 
             // refresh all compilations with a reference to this file or cached artifacts
-            var artifactUris = artifactsToRestore.Select(x => x.Result.TryUnwrap()).WhereNotNull();
+            var artifactUris = artifactsToRestore.Select(x => x.Result.Transform(x => x.Uri.ToUri()).TryUnwrap()).WhereNotNull();
             compilationManager.RefreshChangedFiles(artifactUris.Concat(documentUri.ToUriEncoded()));
             return $"Restore (force) summary: {sbRestoreSummary}";
         }

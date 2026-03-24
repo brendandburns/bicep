@@ -49,6 +49,7 @@ public static class ParamsFileHelper
                 var replacementValue = ConvertJsonToBicepSyntax(overrideValue);
 
                 return new ParameterAssignmentSyntax(
+                    paramSyntax.LeadingNodes,
                     paramSyntax.Keyword,
                     paramSyntax.Name,
                     paramSyntax.Assignment,
@@ -85,6 +86,6 @@ public static class ParamsFileHelper
             return sourceFile;
         }
 
-        return sourceFileFactory.CreateBicepParamFile(sourceFile.Uri, newProgramSyntax.ToString());
+        return sourceFileFactory.CreateBicepParamFile(sourceFile.FileHandle.Uri, newProgramSyntax.ToString());
     }
 }

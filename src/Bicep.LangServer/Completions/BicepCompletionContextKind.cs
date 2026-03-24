@@ -147,7 +147,7 @@ namespace Bicep.LanguageServer.Completions
         /// <summary>
         /// The current location is after # sign.
         /// </summary>
-        DisableNextLineDiagnosticsDirectiveStart = 1UL << 26,
+        DirectiveStart = 1UL << 26,
 
         /// <summary>
         /// The current location is after '#disable-next-line |'.
@@ -263,5 +263,30 @@ namespace Bicep.LanguageServer.Completions
         /// The location immediately after a name in a variable declaration.
         /// </summary>
         VariableNameFollower = 1UL << 48,
+
+        /// <summary>
+        /// We're at this place: 'using 'main.bicep' |'
+        /// </summary>
+        UsingFollower = 1UL << 49,
+
+        /// <summary>
+        /// We're at this place: 'using 'main.bicep' with |'
+        /// </summary>
+        UsingWithFollower = 1UL << 50,
+
+        /// <summary>
+        /// The current location is in the index expression of a type array access (e.g., type foo = someType[|]).
+        /// </summary>
+        TypeArrayIndex = 1UL << 51,
+
+        /// <summary>
+        /// The current location is after '#disable-diagnostics |'.
+        /// </summary>
+        DisableDiagnosticsCodes = 1UL << 52,
+
+        /// <summary>
+        /// The current location is after '#restore-diagnostics |'.
+        /// </summary>
+        RestoreDiagnosticsCodes = 1UL << 53,
     }
 }

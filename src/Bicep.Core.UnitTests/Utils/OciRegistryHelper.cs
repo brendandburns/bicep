@@ -77,10 +77,7 @@ namespace Bicep.Core.UnitTests.Utils
                 .Setup(m => m.CreateAuthenticatedBlobClient(It.IsAny<CloudConfiguration>(), It.IsAny<Uri>(), It.IsAny<string>()))
                 .Returns(blobClient);
 
-            var registry = new OciArtifactRegistry(
-                BicepTestConstants.FileResolver,
-                clientFactory.Object,
-                StrictMock.Of<IPublicModuleMetadataProvider>().Object);
+            var registry = new OciArtifactRegistry(clientFactory.Object, StrictMock.Of<IPublicModuleMetadataProvider>().Object);
 
             return (registry, blobClient);
         }
@@ -93,10 +90,7 @@ namespace Bicep.Core.UnitTests.Utils
             clientFactory.Setup(m => m.CreateAuthenticatedBlobClient(It.IsAny<CloudConfiguration>(), registryUri, repository)).Returns(client);
 
             var containerRegistryManager = new AzureContainerRegistryManager(clientFactory.Object);
-            var configurationManager = BicepTestConstants.ConfigurationManager;
-
-            var parentUri = new Uri("http://test.bicep", UriKind.Absolute);
-            var configuration = configurationManager.GetConfiguration(parentUri);
+            var configuration = IConfigurationManager.GetBuiltInConfiguration();
 
             using var compiledStream = new BufferedMemoryStream();
 

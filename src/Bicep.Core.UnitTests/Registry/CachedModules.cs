@@ -22,7 +22,7 @@ public static class CachedModules
     // Get all cached modules from the local on-disk registry cache
     public static ImmutableArray<CachedModule> GetCachedModules(IFileSystem fileSystem, IDirectoryHandle cacheRootDirectory)
     {
-        var cacheDir = fileSystem.DirectoryInfo.New(cacheRootDirectory.Uri.GetLocalFilePath());
+        var cacheDir = fileSystem.DirectoryInfo.New(cacheRootDirectory.Uri.GetFilePath());
         if (!cacheDir.Exists)
         {
             return [];
@@ -96,7 +96,7 @@ public record CachedModule(
             var sourceTgzFileMock = StrictMock.Of<IFileHandle>();
             sourceTgzFileMock.Setup(x => x.Exists()).Returns(true);
             sourceTgzFileMock.Setup(x => x.OpenRead()).Returns(FileSystem.File.OpenRead(sourceArchivePath));
-            return SourceArchive.TryUnpackFromFile(new(sourceTgzFileMock.Object));
+            return SourceArchive.TryUnpackFromFile(sourceTgzFileMock.Object);
         }
 
         return new(new SourceNotAvailableException());

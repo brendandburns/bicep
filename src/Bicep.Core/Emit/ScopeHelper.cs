@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+
 using System.Collections.Immutable;
 using Azure.Deployments.Expression.Expressions;
 using Bicep.Core.Diagnostics;
@@ -32,15 +33,10 @@ namespace Bicep.Core.Emit
             ImmutableArray<SyntaxBase>? ResourceScopeNameSyntaxSegments = null,
             SyntaxBase? IndexExpression = null);
 
-        public delegate void LogInvalidScopeDiagnostic(IPositionable positionable, ResourceScope suppliedScope, ResourceScope supportedScopes);
+        public delegate void LogInvalidScopeDiagnostic(IPositionable positionable, ResourceScope? suppliedScope, ResourceScope supportedScopes);
 
         private static ScopeData? ValidateScope(SemanticModel semanticModel, LogInvalidScopeDiagnostic logInvalidScopeFunc, ResourceScope supportedScopes, SyntaxBase bodySyntax, SyntaxBase? scopeValue)
         {
-            // If the DSC feature is enabled the scope is added to the supported scopes here so it doesn't have to be added to the Azure types.
-            if (semanticModel.Configuration.ExperimentalFeaturesEnabled.DesiredStateConfiguration)
-            {
-                supportedScopes |= ResourceScope.DesiredStateConfiguration;
-            }
             if (semanticModel.Configuration.ExperimentalFeaturesEnabled.LocalDeploy)
             {
                 supportedScopes |= ResourceScope.Local;
@@ -188,6 +184,13 @@ namespace Bicep.Core.Emit
                     }
 
                     return null;
+
+                case UnionType unionScopeType when scopeSymbol is null && unionScopeType.Members.All(m => m is IScopeReference):
+                    // the user likely provided an expression that would pass type checking but cannot be converted to
+                    // valid scoping data. raise an error
+                    logInvalidScopeFunc(scopeValue, null, supportedScopes);
+
+                    return null;
             }
 
             // type validation should have already caught this
@@ -267,7 +270,7 @@ namespace Bicep.Core.Emit
                     var parentResourceId = FormatFullyQualifiedResourceId(
                         context,
                         converter,
-                        context.ResourceScopeData[resource],
+                        context.SemanticModel.ResourceScopeData[resource],
                         resource.TypeReference.FormatType(),
                         scopingResourceNameSegments);
 
@@ -298,7 +301,7 @@ namespace Bicep.Core.Emit
                     var parentResourceId = FormatUnqualifiedResourceId(
                         context,
                         converter,
-                        context.ResourceScopeData[resource],
+                        context.SemanticModel.ResourceScopeData[resource],
                         resource.TypeReference.FormatType(),
                         converter.GetResourceNameSegments(resource));
 
@@ -406,8 +409,10 @@ namespace Bicep.Core.Emit
 
         public static ImmutableDictionary<DeclaredResourceMetadata, ScopeData> GetResourceScopeInfo(SemanticModel semanticModel, IDiagnosticWriter diagnosticWriter)
         {
-            void logInvalidScopeDiagnostic(IPositionable positionable, ResourceScope suppliedScope, ResourceScope supportedScopes)
-                => diagnosticWriter.Write(positionable, x => x.UnsupportedResourceScope(suppliedScope, supportedScopes));
+            void logInvalidScopeDiagnostic(IPositionable positionable, ResourceScope? suppliedScope, ResourceScope supportedScopes)
+                => diagnosticWriter.Write(positionable, x => suppliedScope.HasValue
+                    ? x.UnsupportedResourceScope(suppliedScope.Value, supportedScopes)
+                    : x.ScopeKindUnresolvableAtCompileTime());
 
             var scopeInfo = new Dictionary<DeclaredResourceMetadata, ScopeData>();
             var ancestorsLookup = semanticModel.DeclaredResources
@@ -562,8 +567,10 @@ namespace Bicep.Core.Emit
 
         public static ImmutableDictionary<ModuleSymbol, ScopeData> GetModuleScopeInfo(SemanticModel semanticModel, IDiagnosticWriter diagnosticWriter)
         {
-            void LogInvalidScopeDiagnostic(IPositionable positionable, ResourceScope suppliedScope, ResourceScope supportedScopes)
-                => diagnosticWriter.Write(positionable, x => x.UnsupportedModuleScope(suppliedScope, supportedScopes));
+            void LogInvalidScopeDiagnostic(IPositionable positionable, ResourceScope? suppliedScope, ResourceScope supportedScopes)
+                => diagnosticWriter.Write(positionable, x => suppliedScope.HasValue
+                    ? x.UnsupportedModuleScope(suppliedScope.Value, supportedScopes)
+                    : x.ScopeKindUnresolvableAtCompileTime());
 
             var scopeInfo = new Dictionary<ModuleSymbol, ScopeData>();
 

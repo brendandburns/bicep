@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+
 using System.Collections.Immutable;
 using Bicep.Core.Navigation;
 using Bicep.Core.Syntax;
@@ -139,15 +140,6 @@ namespace Bicep.Core.Parsing
             return new ParameterDefaultValueSyntax(assignmentToken, defaultValue);
         }
 
-        private SyntaxBase FunctionDeclaration(IEnumerable<SyntaxBase> leadingNodes)
-        {
-            var keyword = ExpectKeyword(LanguageConstants.FunctionKeyword);
-            var name = this.IdentifierWithRecovery(b => b.ExpectedVariableIdentifier(), RecoveryFlags.None, TokenType.Assignment, TokenType.NewLine);
-            var lambda = this.WithRecovery(() => this.TypedLambda(), GetSuppressionFlag(name), TokenType.NewLine);
-
-            return new FunctionDeclarationSyntax(leadingNodes, keyword, name, lambda);
-        }
-
         private SyntaxBase OutputDeclaration(IEnumerable<SyntaxBase> leadingNodes)
         {
             var keyword = ExpectKeyword(LanguageConstants.OutputKeyword);
@@ -262,62 +254,13 @@ namespace Bicep.Core.Parsing
             // extensibility users without warning, the `import` keyword is shared between provider declarations and
             // compile-time imports. If the token following the keyword is a string, assume the statement is a provider
             // declaration.
+            // TODO(extensibility): Consider removing this
             return reader.Peek().Type switch
             {
                 TokenType.StringLeftPiece or
                 TokenType.StringComplete => ExtensionDeclaration(keyword, leadingNodes),
                 _ => CompileTimeImportDeclaration(keyword, leadingNodes),
             };
-        }
-
-        private ExtensionDeclarationSyntax ExtensionDeclaration(Token keyword, IEnumerable<SyntaxBase> leadingNodes)
-        {
-            var specificationSyntax = reader.Peek().Type switch
-            {
-                TokenType.Identifier => new IdentifierSyntax(reader.Read()),
-
-                _ => this.WithRecovery(
-                    () => ThrowIfSkipped(this.InterpolableString, b => b.ExpectedExtensionSpecification()),
-                    RecoveryFlags.None,
-                    TokenType.NewLine)
-            };
-
-            var current = this.reader.Peek();
-            var withClause = current.Type switch
-            {
-                TokenType.EndOfFile or
-                TokenType.NewLine => this.SkipEmpty(),
-                TokenType.Identifier when current.Text == LanguageConstants.AsKeyword => this.SkipEmpty(),
-
-                _ => this.WithRecovery(() => this.ExtensionWithClause(), GetSuppressionFlag(specificationSyntax), TokenType.NewLine),
-            };
-
-            current = this.reader.Peek();
-            var asClause = current.Type switch
-            {
-                TokenType.EndOfFile or
-                TokenType.NewLine => this.SkipEmpty(),
-
-                _ => this.WithRecovery(() => this.ExtensionAsClause(), GetSuppressionFlag(withClause), TokenType.NewLine),
-            };
-
-            return new(leadingNodes, keyword, specificationSyntax, withClause, asClause);
-        }
-
-        private ExtensionWithClauseSyntax ExtensionWithClause()
-        {
-            var keyword = this.ExpectKeyword(LanguageConstants.WithKeyword, b => b.ExpectedWithOrAsKeywordOrNewLine());
-            var config = this.WithRecovery(() => this.Object(ExpressionFlags.AllowComplexLiterals), RecoveryFlags.None, TokenType.NewLine);
-
-            return new(keyword, config);
-        }
-
-        private AliasAsClauseSyntax ExtensionAsClause()
-        {
-            var keyword = this.ExpectKeyword(LanguageConstants.AsKeyword, b => b.ExpectedWithOrAsKeywordOrNewLine());
-            var modifier = this.IdentifierWithRecovery(b => b.ExpectedExtensionAliasName(), RecoveryFlags.None, TokenType.NewLine);
-
-            return new(keyword, modifier);
         }
 
         private SyntaxBase AssertDeclaration(IEnumerable<SyntaxBase> leadingNodes)

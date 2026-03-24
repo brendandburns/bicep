@@ -13,20 +13,27 @@ The following features can be optionally enabled through your `bicepconfig.json`
 
 Should be enabled in tandem with `testFramework` experimental feature flag for expected functionality. Allows you to author boolean assertions using the `assert` keyword comparing the actual value of a parameter, variable, or resource name to an expected value. Assert statements can only be written directly within the Bicep file whose resources they reference. For more information, see [Bicep Experimental Test Framework](https://github.com/Azure/bicep/issues/11967).
 
-### `desiredStateConfiguration`
+### `deployCommands`
 
-Allows you to author configuration documents for [Microsoft's Desired State Configuration platform](https://github.com/PowerShell/DSC) using `targetScope = 'desiredStateConfiguration'`. If enabled, the file must only contain DSC resource instances. The built file is a valid configuration document to be used with the CLI. For example, `dsc.exe config test --file example.json`. This feature is in early development.
+Enables `deploy`, `what-if` and `teardown` command groups, as well as the `with` syntax in a `.bicepparam` file. For more information, see [Using the Deploy Commands](./experimental/deploy-commands.md).
+
+### `existingNullIfNotFound`
+
+Enables the use of the `@nullIfNotFound()` decorator for existing resources. When applied to an existing resource, the resource will return `null` if it doesn't exist at deployment time instead of failing. This allows you to gracefully handle cases where the resource may not exist. (Note: This feature will not work until the backend service support has been deployed)
+
+```bicep
+@nullIfNotFound()
+resource exampleResource 'Microsoft.Storage/storageAccounts@2021-04-01' existing = {
+  name: 'test'
+}
+
+// Access with safe navigation since the resource may be null
+output accessTier string = exampleResource.?properties.accessTier ?? ''
+```
 
 ### `extendableParamFiles`
 
 Enables the ability to extend bicepparam files from other bicepparam files. For more information, see [Extendable Bicep Params Files](./experimental/extendable-param-files.md).
-
-### `extensibility`
-
-Allows Bicep to use an extensibility model to deploy non-ARM resources. Currently, we support Kubernetes extension ([Bicep Kubernetes extension](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/bicep-kubernetes-extension)) and Microsoft Graph extension ([Bicep templates for Microsoft Graph](https://aka.ms/graphbicep)).
-
-### `externalInputFunction`
-Enables the `externalInput` function to allow reading input that will be resolved later by external tooling. This is useful for tools that require the ability to inject values at deployment time. Note: This feature will not work until the backend service support has been deployed.
 
 ### `legacyFormatter`
 
@@ -40,23 +47,6 @@ Enables Bicep to run deployments locally, so that you can run Bicep extensions w
 
 Moves defining extension configurations to the module level rather than from within a template. The feature also
 includes enhancements for Deployment stacks extensibility integration. This feature is not ready for use.
-
-### `onlyIfNotExists`
-The feature introduces the onlyIfNotExists decorator on a resource. The decorator will only deploy the resource if it does not exist. (Note: This feature will not work until the backend service support has been deployed)
-```
-@onlyIfNotExists()
-resource onlyDeployIfNotExists 'Microsoft...' = {
-  name: 'example'
-  location: 'eastus'
-  properties: {
-    ...
-  }
-}
-```
-
-### `resourceDerivedTypes`
-
-If enabled, templates can reuse resource types wherever a type is expected. For example, to declare a parameter `foo` that should be usable as the name of an Azure Storage account, the following syntax would be used: `param foo resourceInput<'Microsoft.Storage/storageAccounts@2022-09-01'>.name`. **NB:** Because resource types may be inaccurate in some cases, no constraints other than the ARM type primitive will be enforced on resource derived types within the ARM deployment engine. Resource-derived types will be checked by Bicep at compile time, but violations will be emitted as warnings rather than errors.
 
 ### `resourceInfoCodegen`
 
@@ -77,6 +67,29 @@ Allows the ARM template layer to use a new schema to represent resources as an o
 ### `testFramework`
 
 Should be enabled in tandem with `assertions` experimental feature flag for expected functionality. Allows you to author client-side, offline unit-test test blocks that reference Bicep files and mock deployment parameters in a separate `test.bicep` file using the new `test` keyword. Test blocks can be run with the command *bicep test <filepath_to_file_with_test_blocks>* which runs all `assert` statements in the Bicep files referenced by the test blocks. For more information, see [Bicep Experimental Test Framework](https://github.com/Azure/bicep/issues/11967).
+### `thisNamespace`
+
+Enables the `this` namespace for accessing the current resource instance. The `this` namespace is only discoverable in resource bodies. Currently, `this.exists()` and `this.existingResource()` are available for usage. `this.exists()` returns a bool indicating the existence of the current resource. `this.existingResource()` returns null if the resource does not exist and returns the full resource if the resource exists. (Note: This feature will not work until the backend service support has been deployed)
+```
+resource usingThis 'Microsoft...' = {
+  name: 'example'
+  location: 'eastus'
+  properties: {
+    property1: this.exists() ? 'resource exists' : 'resource does not exist'
+    property2: this.existingResource().?properties.?property2
+    property3: this.existingResource().?tags
+  }
+}
+```
+
+### `userDefinedConstraints`
+
+Enables the `@validate()` decorator on types, type properties, parameters, and outputs. The decorator takes two arguments: 1) a lambda function that accepts the decorator target's value and returns a boolean indicating if the value is valid (`true`) or not (`false`), and 2) an optional error message to use if the lambda returns `false`.
+
+```bicep
+@validate(x => startsWith(x, 'foo')) // <-- Accepts 'food' or 'fool' but causes the deployment to fail if 'booed' was supplied
+param p string
+```
 
 ### `waitAndRetry`
 
@@ -87,3 +100,7 @@ The feature introduces waitUntil and retryOn decorators on resource data type. w
 ### `publish-extension` CLI Command
 
 Command that allows the publishing of extensions to container registries. For more information, see [Using the Publish Extension Command](./experimental/publish-extension-command.md).
+
+### Bicep MCP Server
+
+See [Using Bicep MCP Server in VS Code (Preview!)](./experimental/mcp-tools.md).

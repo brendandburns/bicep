@@ -5,6 +5,7 @@ using Bicep.Core.Emit;
 using Bicep.Core.Emit.Options;
 using Bicep.Core.Exceptions;
 using Bicep.Core.Semantics;
+using Bicep.IO.Abstraction;
 
 namespace Bicep.Cli.Services
 {
@@ -20,14 +21,14 @@ namespace Bicep.Cli.Services
             this.io = io;
         }
 
-        public EmitResult ToFile(Compilation compilation, string outputPath, OutputFormatOption outputFormat, IncludeParamsOption includeParams)
+        public EmitResult ToFile(Compilation compilation, IFileHandle outputFile, OutputFormatOption outputFormat, IncludeParamsOption includeParams)
         {
             var existingContent = string.Empty;
-            if (File.Exists(outputPath))
+            if (outputFile.Exists())
             {
-                existingContent = File.ReadAllText(outputPath);
+                existingContent = outputFile.ReadAllText();
             }
-            using var fileStream = CreateFileStream(outputPath);
+            using var fileStream = outputFile.OpenWrite();
             var semanticModel = compilation.GetEntrypointSemanticModel();
             return new TemplateEmitter(semanticModel).EmitTemplateGeneratedParameterFile(fileStream, existingContent, outputFormat, includeParams);
         }
@@ -35,19 +36,7 @@ namespace Bicep.Cli.Services
         public EmitResult ToStdout(Compilation compilation, OutputFormatOption outputFormat, IncludeParamsOption includeParams)
         {
             var semanticModel = compilation.GetEntrypointSemanticModel();
-            return new TemplateEmitter(semanticModel).EmitTemplateGeneratedParameterFile(io.Output, string.Empty, outputFormat, includeParams);
-        }
-
-        private static FileStream CreateFileStream(string path)
-        {
-            try
-            {
-                return new FileStream(path, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
-            }
-            catch (Exception exception)
-            {
-                throw new BicepException(exception.Message, exception);
-            }
+            return new TemplateEmitter(semanticModel).EmitTemplateGeneratedParameterFile(io.Output.Writer, string.Empty, outputFormat, includeParams);
         }
     }
 }

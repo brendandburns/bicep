@@ -4,18 +4,14 @@
 using System.IO.Compression;
 using Bicep.Cli.Arguments;
 using Bicep.Core.Exceptions;
+using Bicep.Core.Utils;
 
 namespace Bicep.Cli.Commands
 {
-    public class RootCommand : ICommand
+    public class RootCommand(
+        IOContext io,
+        IEnvironment environment) : ICommand
     {
-        private readonly IOContext io;
-
-        public RootCommand(IOContext io)
-        {
-            this.io = io;
-        }
-
         public int Run(RootArguments args)
         {
             if (args.PrintVersion)
@@ -48,7 +44,7 @@ namespace Bicep.Cli.Commands
         private void PrintHelp()
         {
             var exeName = ThisAssembly.AssemblyName;
-            var versionString = GetVersionString();
+            var versionString = environment.GetVersionString();
 
             var output =
 $@"Bicep CLI version {versionString}
@@ -243,47 +239,62 @@ Usage:
       bicep build-params --pattern './dir/**/*.bicepparam'
 
   {exeName} jsonrpc [options]
-    Runs a JSONRPC server for interacting with Bicep programmatically.
+    Starts the Bicep CLI listening for JSONRPC messages, for programatically interacting with Bicep. See https://aka.ms/bicep/jsonrpc for more information.
 
     Options:
-      --pipe <name>   Runs the JSONRPC server using a named pipe.
-      --socket <dir>  Runs the JSONRPC server on a specific port.
-      --stdio         Runs the JSONRPC server over stdin/stdout.
+      --pipe <name>    Bicep CLI will connect to the supplied named pipe as a client, and start listening for JSONRPC requests.
+      --socket <port>  Bicep CLI will connect to the supplied TCP port on the loopback interface as a client, and start listening for JSONRPC requests.
+      --stdio          Bicep CLI will use stdin/stdout for JSONRPC requests.
 
     Examples:
       bicep jsonrpc --pipe /path/to/pipe.sock
+      bicep jsonrpc --socket 9853
       bicep jsonrpc --stdio
+
+  {exeName} snapshot [options] <file>
+    Generates or validates a deployment snapshot from a .bicepparam file.
+
+    Arguments:
+      <file>        The input .bicepparam file
+
+    Options:
+      --mode <mode>              Sets the snapshot mode. Valid values are ( overwrite | validate ).
+                                   Overwrite: Generates a new snapshot and saves it to <file>.snapshot.json.
+                                   Validate: Compares the generated snapshot against an existing snapshot file.
+      --tenant-id <id>           The tenant ID to use for the deployment.
+      --subscription-id <id>     The subscription ID to use for the deployment.
+      --resource-group <name>    The resource group name to use for the deployment.
+      --location <location>      The location to use for the deployment.
+      --deployment-name <name>   The deployment name to use.
+
+    Examples:
+      bicep snapshot params.bicepparam
+      bicep snapshot params.bicepparam --mode overwrite
+      bicep snapshot params.bicepparam --mode validate
+      bicep snapshot params.bicepparam --subscription-id 00000000-0000-0000-0000-000000000000 --resource-group my-rg
 
 "; // this newline is intentional
 
-            io.Output.Write(output);
-            io.Output.Flush();
+            io.Output.Writer.Write(output);
+            io.Output.Writer.Flush();
         }
 
         private void PrintVersion()
         {
-            var output = $@"Bicep CLI version {GetVersionString()}{Environment.NewLine}";
+            var output = $@"Bicep CLI version {environment.GetVersionString()}{System.Environment.NewLine}";
 
-            io.Output.Write(output);
-            io.Output.Flush();
+            io.Output.Writer.Write(output);
+            io.Output.Writer.Flush();
         }
 
         private void PrintLicense()
         {
-            WriteEmbeddedResource(io.Output, "LICENSE.deflated");
+            WriteEmbeddedResource(io.Output.Writer, "LICENSE.deflated");
         }
 
         private void PrintThirdPartyNotices()
         {
-            WriteEmbeddedResource(io.Output, "NOTICE.deflated");
-        }
-
-        private static string GetVersionString()
-        {
-            var versionSplit = ThisAssembly.AssemblyInformationalVersion.Split('+');
-
-            // <major>.<minor>.<patch> (<commmithash>)
-            return $"{versionSplit[0]} ({(versionSplit.Length > 1 ? versionSplit[1] : "custom")})";
+            WriteEmbeddedResource(io.Output.Writer, "NOTICE.deflated");
         }
 
         private static void WriteEmbeddedResource(TextWriter writer, string streamName)

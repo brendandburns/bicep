@@ -56,11 +56,11 @@ dotnet_diagnostic.IDE0301.severity = warning
 # Use collection expression for stackalloc
 dotnet_diagnostic.IDE0302.severity = warning
 # Use collection expression for `Create()
-dotnet_diagnostic.IDE0303.severity = warning
+dotnet_diagnostic.IDE0303.severity = suggestion
 # Use collection expression for builder
 dotnet_diagnostic.IDE0304.severity = warning
 # Use collection expression for fluent
-dotnet_diagnostic.IDE0305.severity = warning
+dotnet_diagnostic.IDE0305.severity = suggestion
 
 # Unused local variables
 dotnet_diagnostic.CA1804.severity = warning
@@ -277,3 +277,8 @@ dotnet_diagnostic.CA1851.severity = warning
 # Override code quality rules for test projects
 [{src/Bicep.Core.Samples/*.cs,src/*Test*/*.cs}]
 dotnet_diagnostic.CA1851.severity = suggestion
+
+# This library is intended to be consumed by other .NET applications, so re-enable best-practice for threading
+[src/Bicep.RpcClient/**/*.cs]
+# Do not directly await a Task
+dotnet_diagnostic.CA2007.severity = warning

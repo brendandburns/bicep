@@ -5,6 +5,7 @@ using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using Bicep.Core.Analyzers.Interfaces;
 using Bicep.Core.Configuration;
+using Bicep.Core.Extensions;
 using Bicep.Core.Features;
 using Bicep.Core.FileSystem;
 using Bicep.Core.Registry;
@@ -12,17 +13,18 @@ using Bicep.Core.Semantics;
 using Bicep.Core.Semantics.Namespaces;
 using Bicep.Core.SourceGraph;
 using Bicep.Core.TypeSystem.Providers;
-using Bicep.Core.TypeSystem.Providers.MicrosoftGraph;
 using Bicep.Core.TypeSystem.Types;
+using Bicep.IO.Abstraction;
+using Bicep.TextFixtures.Utils;
 
 namespace Bicep.Core.UnitTests.Utils;
 
 public static class ServiceBuilderExtensions
 {
-    public static ServiceBuilder WithFileResolver(this ServiceBuilder serviceBuilder, IFileResolver fileResolver)
-        => serviceBuilder.WithRegistration(x => x.WithFileResolver(fileResolver));
+    public static ServiceBuilder WithFileExplorer(this ServiceBuilder serviceBuilder, IFileExplorer fileExplorer)
+        => serviceBuilder.WithRegistration(x => x.WithFileExplorer(fileExplorer));
 
-    public static ServiceBuilder WithWorkspace(this ServiceBuilder serviceBuilder, IWorkspace workspace)
+    public static ServiceBuilder WithWorkspace(this ServiceBuilder serviceBuilder, IActiveSourceFileSet workspace)
         => serviceBuilder.WithRegistration(x => x.WithWorkspace(workspace));
 
     public static ServiceBuilder WithContainerRegistryClientFactory(this ServiceBuilder serviceBuilder, IContainerRegistryClientFactory containerRegistryClientFactory)
@@ -30,6 +32,12 @@ public static class ServiceBuilderExtensions
 
     public static ServiceBuilder WithTemplateSpecRepositoryFactory(this ServiceBuilder serviceBuilder, ITemplateSpecRepositoryFactory factory)
         => serviceBuilder.WithRegistration(x => x.WithTemplateSpecRepositoryFactory(factory));
+
+    public static ServiceBuilder WithTestArtifactManager(this ServiceBuilder serviceBuilder, TestExternalArtifactManager manager)
+        => serviceBuilder
+            .WithFeaturesOverridden(f => f with { RegistryEnabled = true })
+            .WithContainerRegistryClientFactory(manager.ContainerRegistryClientFactory)
+            .WithTemplateSpecRepositoryFactory(manager.TemplateSpecRepositoryFactory);
 
     public static ServiceBuilder WithFeatureProviderFactory(this ServiceBuilder serviceBuilder, IFeatureProviderFactory featureProviderFactory)
         => serviceBuilder.WithRegistration(x => x.WithFeatureProviderFactory(featureProviderFactory));
@@ -58,9 +66,6 @@ public static class ServiceBuilderExtensions
     public static ServiceBuilder WithEmptyAzResources(this ServiceBuilder serviceBuilder)
         => serviceBuilder.WithRegistration(x => x.WithEmptyAzResources());
 
-    public static ServiceBuilder WithMsGraphResourceTypeLoader(this ServiceBuilder serviceBuilder, MicrosoftGraphResourceTypeLoader typeLoader)
-        => serviceBuilder.WithRegistration(x => x.WithMsGraphResourceTypeLoaderFactory(typeLoader));
-
     public static ServiceBuilder WithEnvironmentVariables(this ServiceBuilder serviceBuilder, params (string key, string? value)[] variables)
         => serviceBuilder.WithRegistration(x => x.WithEnvironmentVariables(variables));
 
@@ -86,6 +91,14 @@ public static class ServiceBuilderExtensions
         var compiler = services.Build().GetCompiler();
         var workspace = CompilationHelper.CreateWorkspace(compiler.SourceFileFactory, fileContentsByUri);
 
+        return compiler.CreateCompilationWithoutRestore(entryFileUri.ToIOUri(), workspace);
+    }
+
+    public static Compilation BuildCompilation(this ServiceBuilder services, IReadOnlyDictionary<IOUri, string> fileContentsByUri, IOUri entryFileUri)
+    {
+        var compiler = services.Build().GetCompiler();
+        var workspace = CompilationHelper.CreateWorkspace(compiler.SourceFileFactory, fileContentsByUri.ToDictionary(x => x.Key.ToUri(), x => x.Value));
+
         return compiler.CreateCompilationWithoutRestore(entryFileUri, workspace);
     }
 
@@ -94,7 +107,7 @@ public static class ServiceBuilderExtensions
         var compiler = services.Build().GetCompiler();
         var workspace = CompilationHelper.CreateWorkspace(compiler.SourceFileFactory, fileContentsByUri);
 
-        return await compiler.CreateCompilation(entryFileUri, workspace);
+        return await compiler.CreateCompilation(entryFileUri.ToIOUri(), workspace);
     }
 
     public static Compilation BuildCompilation(this ServiceBuilder services, string text)

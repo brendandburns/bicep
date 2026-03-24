@@ -83,7 +83,7 @@ param l
             ("BCP028", DiagnosticLevel.Error, "Identifier \"l\" is declared multiple times. Remove or rename the duplicates."),
             ("BCP079", DiagnosticLevel.Error, "This expression is referencing its own declaration, which is not allowed."),
             ("BCP028", DiagnosticLevel.Error, "Identifier \"l\" is declared multiple times. Remove or rename the duplicates."),
-            ("BCP279", DiagnosticLevel.Error, "Expected a type at this location. Please specify a valid type expression or one of the following types: \"array\", \"bool\", \"int\", \"object\", \"string\"."),
+            ("BCP279", DiagnosticLevel.Error, "Expected a type at this location. Please specify a valid type expression or one of the following types: \"any\", \"array\", \"bool\", \"int\", \"object\", \"string\"."),
         });
     }
 
@@ -145,8 +145,8 @@ output vnetstate string = vnet.properties.provisioningState
 
         result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
         // ensure we're generating the correct expression with 'subscriptionResourceId', and using the correct name for the module
-        result.Template.Should().HaveValueAtPath("$.outputs['vnetid'].value", "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'vnet-rg'), 'Microsoft.Resources/deployments', 'network-module'), '2022-09-01').outputs.vnetId.value]");
-        result.Template.Should().HaveValueAtPath("$.outputs['vnetstate'].value", "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'vnet-rg'), 'Microsoft.Resources/deployments', 'network-module'), '2022-09-01').outputs.vnetstate.value]");
+        result.Template.Should().HaveValueAtPath("$.outputs['vnetid'].value", "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'vnet-rg'), 'Microsoft.Resources/deployments', 'network-module'), '2025-04-01').outputs.vnetId.value]");
+        result.Template.Should().HaveValueAtPath("$.outputs['vnetstate'].value", "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'vnet-rg'), 'Microsoft.Resources/deployments', 'network-module'), '2025-04-01').outputs.vnetstate.value]");
     }
 
     [TestMethod]
@@ -792,7 +792,7 @@ output xx = x
         result.Template.Should().NotHaveValue();
         result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]
         {
-            ("BCP279", DiagnosticLevel.Error, "Expected a type at this location. Please specify a valid type expression or one of the following types: \"array\", \"bool\", \"int\", \"object\", \"string\"."),
+            ("BCP279", DiagnosticLevel.Error, "Expected a type at this location. Please specify a valid type expression or one of the following types: \"any\", \"array\", \"bool\", \"int\", \"object\", \"string\"."),
         });
     }
 
@@ -924,7 +924,7 @@ output test string = 'hello'
 
         result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
         result.Template.Should().HaveValueAtPath("$.outputs['fooName'].value", "[format('{0}-test', parameters('someParam'))]");
-        result.Template.Should().HaveValueAtPath("$.outputs['fooOutput'].value", "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-test', parameters('someParam'))), '2022-09-01').outputs.test.value]");
+        result.Template.Should().HaveValueAtPath("$.outputs['fooOutput'].value", "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-test', parameters('someParam'))), '2025-04-01').outputs.test.value]");
     }
 
     [TestMethod]
@@ -2402,8 +2402,8 @@ output deployedTopics array = [for (topicName, i) in topics: {
         result.Template!.Should().HaveValueAtPath("$.outputs.deployedTopics.copy.input", new JObject
         {
             ["name"] = "[variables('topics')[copyIndex()]]",
-            ["accessKey1"] = "[listKeys('testR', '2021-06-01-preview').key1]",
-            ["accessKey2"] = "[listKeys(format('eventGridTopics[{0}]', copyIndex()), '2021-06-01-preview').key1]"
+            ["accessKey1"] = "[listKeys(resourceId('Microsoft.EventGrid/topics', 'myExistingEventGridTopic'), '2021-06-01-preview').key1]",
+            ["accessKey2"] = "[listKeys(resourceId('Microsoft.EventGrid/topics', format('{0}-ZZZ', variables('topics')[copyIndex()])), '2021-06-01-preview').key1]"
         });
     }
 
@@ -2954,7 +2954,7 @@ output badResult object = {
 
         result.Template.Should().HaveValueAtPath("$.outputs['badResult'].value", new JObject
         {
-            ["value"] = "[listAnything('stg', '2021-04-01').keys[0].value]",
+            ["value"] = "[listAnything(resourceId('Microsoft.Storage/storageAccounts', parameters('storageName')), '2021-04-01').keys[0].value]",
         });
     }
 
@@ -3079,7 +3079,7 @@ resource foo 'Microsoft.Storage/storageAccounts@2021-04-01' = {
 ");
         result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]
         {
-            ("BCP120", DiagnosticLevel.Error, "This expression is being used in an assignment to the \"name\" property of the \"Microsoft.Storage/storageAccounts\" type, which requires a value that can be calculated at the start of the deployment. Properties of existingStg which can be calculated at the start include \"apiVersion\", \"id\", \"type\".")
+            ("BCP120", DiagnosticLevel.Error, "This expression is being used in an assignment to the \"name\" property of the \"Microsoft.Storage/storageAccounts\" type, which requires a value that can be calculated at the start of the deployment. Properties of existingStg which can be calculated at the start include \"apiVersion\", \"type\".")
         });
     }
 
@@ -5079,6 +5079,69 @@ output modDetails array = ([for (mod, index) in modOptions: {
         result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
     }
 
+    // https://github.com/Azure/bicep/issues/17192
+    [TestMethod]
+    public void Test_Issue17192()
+    {
+        var result = CompilationHelper.Compile(
+          ("main.bicep",
+"""
+import { Location } from 'test.bicep'
+var location = 2
+output output_of_location int = location
+"""),
+          ("test.bicep",
+"""
+@export()
+var Location = 1
+""")
+        );
+
+        result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]
+        {
+            ("BCP353", DiagnosticLevel.Error, "The variables \"location\", \"Location\" differ only in casing. The ARM deployments engine is not case sensitive and will not be able to distinguish between them."),
+            ("BCP353", DiagnosticLevel.Error, "The variables \"location\", \"Location\" differ only in casing. The ARM deployments engine is not case sensitive and will not be able to distinguish between them."),
+        });
+
+        result = CompilationHelper.Compile(
+        ("main.bicep",
+"""
+import { MyFunc } from 'test.bicep'
+func myFunc() string => 'bar'
+"""),
+        ("test.bicep",
+"""
+@export()
+func MyFunc() string => 'foo'
+""")
+        );
+
+        result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]
+        {
+            ("BCP353", DiagnosticLevel.Error, "The functions \"myFunc\", \"MyFunc\" differ only in casing. The ARM deployments engine is not case sensitive and will not be able to distinguish between them."),
+            ("BCP353", DiagnosticLevel.Error, "The functions \"myFunc\", \"MyFunc\" differ only in casing. The ARM deployments engine is not case sensitive and will not be able to distinguish between them."),
+        });
+
+        result = CompilationHelper.Compile(
+        ("main.bicep",
+"""
+import { MyType } from 'test.bicep'
+type myType = { foo: string }
+"""),
+        ("test.bicep",
+"""
+@export()
+type MyType = { foo: string }
+""")
+        );
+
+        result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]
+        {
+            ("BCP353", DiagnosticLevel.Error, "The types \"myType\", \"MyType\" differ only in casing. The ARM deployments engine is not case sensitive and will not be able to distinguish between them."),
+            ("BCP353", DiagnosticLevel.Error, "The types \"myType\", \"MyType\" differ only in casing. The ARM deployments engine is not case sensitive and will not be able to distinguish between them."),
+        });
+    }
+
     // https://github.com/Azure/bicep/issues/10343
     [TestMethod]
     public void Test_Issue10343()
@@ -5776,7 +5839,7 @@ param foo2 string[]
     {
         var result = CompilationHelper.Compile(
             Services
-                .WithFeatureOverrides(new(TestContext, ExtensibilityEnabled: true))
+                .WithFeatureOverrides(new(TestContext))
                 .WithConfigurationPatch(x => x.WithAnalyzersConfiguration(x.Analyzers.SetValue("core.rules.use-recent-api-versions.level", "error"))),
             ("main.bicep", """
                 extension kubernetes with {
@@ -6367,7 +6430,10 @@ param p invalidRecursiveObjectType = {}
             }
             """);
 
-        result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
+        result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]
+        {
+            ("BCP420", DiagnosticLevel.Error, "The scope could not be resolved at compile time because the supplied expression is ambiguous or too complex. Scoping expressions must be reducible to a specific kind of scope without knowledge of parameter values."),
+        });
     }
 
     [TestMethod]
@@ -6380,7 +6446,7 @@ param p invalidRecursiveObjectType = {}
         var registry = "example.azurecr.io";
         var repository = "microsoftgraph/v1";
 
-        var services = ExtensionTestHelper.GetServiceBuilder(fileSystem, registry, repository, new(ExtensibilityEnabled: true));
+        var services = ExtensionTestHelper.GetServiceBuilder(fileSystem, registry, repository, new());
 
         await RegistryHelper.PublishExtensionToRegistryAsync(services.Build(), "/index.json", $"br:{registry}/{repository}:1.2.3");
 
@@ -6432,7 +6498,7 @@ param p invalidRecursiveObjectType = {}
 
             resource memberServicePrincipals 'Microsoft.Graph/servicePrincipals@v1.0' existing = [
               for (member, i) in entraGroup.members: if (member.type =~ 'Application') {
-                appId: memberApplications[i].appId
+                appId: memberApplications[i]!.appId
               }
             ]
 
@@ -6467,7 +6533,7 @@ param p invalidRecursiveObjectType = {}
 
             resource ownerServicePrincipals 'Microsoft.Graph/servicePrincipals@v1.0' existing = [
               for (owner, i) in entraGroup.owners: if (owner.type =~ 'Application') {
-                appId: ownerApplications[i].appId
+                appId: ownerApplications[i]!.appId
               }
             ]
 
@@ -6486,19 +6552,19 @@ param p invalidRecursiveObjectType = {}
               securityEnabled: true
               members: [
                 for (member, i) in entraGroup.members: member.type =~ 'UserAssignedManagedIdentity'
-                  ? memberManagedIdentities[i].properties.principalId
+                  ? memberManagedIdentities[i]!.properties.principalId
                   : member.type =~ 'Application'
-                      ? memberServicePrincipals[i].id
+                      ? memberServicePrincipals[i]!.id
                       : member.type =~ 'ServicePrincipal'
-                          ? memberServicePrincipalsStandalone[i].id
-                          : member.type =~ 'Group' ? memberGroups[i].id : member.type =~ 'PrincipalId' ? member.principalId : ''
+                          ? memberServicePrincipalsStandalone[i]!.id
+                          : member.type =~ 'Group' ? memberGroups[i]!.id : member.type =~ 'PrincipalId' ? member.principalId : ''
               ]
               owners: [
                 for (owner, i) in entraGroup.owners: owner.type =~ 'UserAssignedManagedIdentity'
-                  ? ownerManagedIdentities[i].properties.principalId
+                  ? ownerManagedIdentities[i]!.properties.principalId
                   : owner.type =~ 'Application'
-                      ? ownerServicePrincipals[i].id
-                      : owner.type =~ 'ServicePrincipal' ? ownerServicePrincipalsStandalone[i].id : owner.type =~ 'PrincipalId' ? owner.principalId : ''
+                      ? ownerServicePrincipals[i]!.id
+                      : owner.type =~ 'ServicePrincipal' ? ownerServicePrincipalsStandalone[i]!.id : owner.type =~ 'PrincipalId' ? owner.principalId : ''
               ]
             }
             """);
@@ -7014,7 +7080,7 @@ var subnetId = vNet::subnets[0].id
                     }
                     tenantId: '00000000-0000-0000-0000-000000000000'
                   }
-                  
+
                   resource secret 'secrets' = {
                     name: 'secret'
                     properties: {}
@@ -7031,7 +7097,7 @@ var subnetId = vNet::subnets[0].id
                     }
                     tenantId: '00000000-0000-0000-0000-000000000000'
                   }
-                  
+
                   resource secret 'secrets' = {
                     name: 'secret'
                     properties: {}
@@ -7067,7 +7133,7 @@ var subnetId = vNet::subnets[0].id
                 module empty 'empty.bicep' = {
                   name: 'foo'
                 }
-                
+
                 resource sa 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
                   name: 'storage'
                   dependsOn: [
@@ -7229,5 +7295,534 @@ var subnetId = vNet::subnets[0].id
             """);
 
         result.Should().NotHaveAnyDiagnostics();
+    }
+
+    [TestMethod]
+    public void Test_Issue17035()
+    {
+        var result = CompilationHelper.Compile(
+            ("empty.bicep", string.Empty),
+            ("main.bicep", """
+                var list = []
+                module example2 'empty.bicep' = [for (item, index) in list: {
+                  name: 'networkSecurityPerimeterProfileAssociations-${uniqueString('test1', 'test2', 'test2')}-${index}'
+                }]
+                """));
+
+        result.Should().NotHaveAnyDiagnostics();
+    }
+
+    [TestMethod]
+    public void Test_Issue17157()
+    {
+        var result = CompilationHelper.Compile("""
+            param resourceName string = 'example'
+            param serverFarmId string
+            param someIdentityObjectId string
+            param shouldDeploy bool
+
+            resource deployAppService 'Microsoft.Web/sites@2022-03-01' = if (shouldDeploy) {
+              name: resourceName
+              location: resourceGroup().location
+              properties: {
+                serverFarmId: serverFarmId
+              }
+            }
+
+            resource existingAppService 'Microsoft.Web/sites@2022-03-01' existing = {
+              name: resourceName
+            }
+
+            resource contributorRoleDefinition 'Microsoft.Authorization/roleDefinitions@2018-01-01-preview' existing = {
+              name: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+            }
+
+            var appServiceId = shouldDeploy ? deployAppService.id : existingAppService.id
+            resource contributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = if (shouldDeploy) {
+              name: guid(appServiceId, someIdentityObjectId, 'contributor')
+              scope: shouldDeploy ? deployAppService : existingAppService
+              properties: {
+                roleDefinitionId: contributorRoleDefinition.id
+                principalId: someIdentityObjectId
+                principalType: 'ServicePrincipal'
+              }
+            }
+            """);
+
+        result.Should().HaveDiagnostics(new[]
+        {
+            ("BCP420", DiagnosticLevel.Error, "The scope could not be resolved at compile time because the supplied expression is ambiguous or too complex. Scoping expressions must be reducible to a specific kind of scope without knowledge of parameter values."),
+        });
+    }
+
+    [TestMethod]
+    public void Local_deploy_cannot_be_used_with_secure_outputs()
+    {
+        var result = CompilationHelper.Compile(Services.WithFeatureOverrides(new(LocalDeployEnabled: true)), ("main.bicep", """
+targetScope = 'local'
+
+module mod 'mod.bicep' = {
+  scope: resourceGroup('00000000-0000-0000-0000-000000000000', 'foo')
+  params: {
+    secret: 'blah'
+  }
+}
+"""), ("mod.bicep", """
+@secure()
+param secret string
+
+@secure()
+output secret string = secret
+"""));
+
+        result.ExcludingLinterDiagnostics().Should().HaveDiagnostics([
+            ("BCP421", DiagnosticLevel.Error, """Module "mod" contains one or more secure outputs, which are not supported with "targetScope" set to "local"."""),
+        ]);
+    }
+
+    [TestMethod]
+    public async Task Test_Issue16748()
+    {
+        // https://github.com/Azure/bicep/issues/16748
+        var services = await ExtensionTestHelper.GetServiceBuilderWithPublishedExtension(ExtensionResourceTypeHelper.GetTestTypesTgz(), new());
+
+        var result = await CompilationHelper.RestoreAndCompile(
+            services,
+"""
+extension 'br:example.azurecr.io/extensions/foo:1.2.3'
+
+param uniqueNames string[]
+
+resource groups 'fooType@v1' existing = [for uniqueName in uniqueNames: {
+  identifier: uniqueName
+}]
+
+resource databases 'Microsoft.DocumentDb/databaseAccounts@2023-04-15' existing = [for uniqueName in uniqueNames: {
+  name: uniqueName
+}]
+
+output memberIds array = flatten(map(groups, group => [group.properties.readonly]))
+output locations array = flatten(map(databases, database => database.properties.locations))
+""");
+
+        result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
+        result.Template.Should().HaveValueAtPath("$.outputs['memberIds'].value", "[flatten(map(references('groups'), lambda('group', createArray(lambdaVariables('group').properties.readonly))))]");
+        result.Template.Should().HaveValueAtPath("$.outputs['locations'].value", "[flatten(map(references('databases', 'full'), lambda('database', lambdaVariables('database').properties.locations)))]");
+    }
+
+    [TestMethod]
+    public void Diagnostic_should_be_raised_when_instance_method_is_called_on_conditional_resource()
+    {
+        var result = CompilationHelper.Compile("""
+            param condition bool
+            resource sa 'Microsoft.Storage/storageAccounts@2023-05-01' existing = if (condition) {
+              name: 'storage'
+            }
+
+            @secure()
+            output out object = sa.listKeys()
+            """);
+
+        result.Should().HaveDiagnostics(new[]
+        {
+            ("BCP422", DiagnosticLevel.Warning, "A resource of type \"Microsoft.Storage/storageAccounts | null\" may or may not exist when this function is called, which could cause the deployment to fail."),
+        });
+    }
+
+    [TestMethod]
+    public void Test_Issue17456()
+    {
+        var result = CompilationHelper.Compile("""
+            var array = [
+              'a'
+              'b'
+              'c'
+              'd'
+              'e'
+              'f'
+              'g'
+              'a'
+              'b'
+            ]
+
+            output unique string[] = reduce(array, [], (acc, x) => union(acc, [x]))
+            """);
+
+        result.Should().NotHaveAnyDiagnostics();
+    }
+
+    [TestMethod]
+    public void Test_FilePathMustBeRelative()
+    {
+        var result = CompilationHelper.Compile("""
+            param test string = loadTextContent('C:\\folder\\.ssh\\id_rsa.pub')
+            """);
+
+        result.Should().ContainDiagnostic("BCP051", DiagnosticLevel.Error, "The specified path seems to reference an absolute path. Files must be referenced using relative paths.");
+    }
+
+    [TestMethod]
+    public void Test_Issue18217()
+    {
+        var result = CompilationHelper.CompileParams(
+            ("parameters.bicepparam", """
+            using 'mod.json'
+
+            param foo = 'bar'
+            """),
+            ("mod.json", """
+            {
+              "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+              "contentVersion": "1.0.0.0",
+              "parameters": {
+                "foo": {}
+              },
+              "resources": []
+            }
+            """));
+
+        result.Should().NotHaveAnyDiagnostics();
+    }
+
+    [TestMethod]
+    public void Test_Issue18217_module()
+    {
+        var result = CompilationHelper.Compile(
+            ("main.bicep", """
+            module mod 'mod.json' = {
+              params: {
+                foo: 'bar'
+              }
+            }
+            """),
+            ("mod.json", """
+            {
+              "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+              "contentVersion": "1.0.0.0",
+              "parameters": {
+                "foo": {}
+              },
+              "resources": []
+            }
+            """));
+
+        result.Should().NotHaveAnyDiagnostics();
+    }
+
+    [TestMethod]
+    public void Test_Issue18416()
+    {
+        var result = CompilationHelper.CompileParams(
+            ("foo.json", """
+                {
+                    "default": 5,
+                    "boolLiteral": true
+                }
+                """),
+            ("main.bicep", """
+                type fooType = 5 | 10 | 15
+
+                param foo fooType
+
+                param bar true
+                """),
+            ("parameters.bicepparam", """
+                using 'main.bicep'
+
+                var fooVar = loadJsonContent('foo.json')
+
+                param foo = fooVar.default
+                param bar = fooVar.boolLiteral
+                """));
+
+        result.Should().NotHaveAnyDiagnostics();
+    }
+
+    [TestMethod]
+    public void Test_Issue17555()
+    {
+        var result = CompilationHelper.Compile("""
+            metadata name = 'ts-devopspool'
+            metadata description = 'Creates a managed devops pool'
+            metadata version = '1.0.0'
+
+            @description('Optional, default value is empty. Resource tags. Dictionary of tag names and values. See Tags in templates')
+            param parTags object = {}
+
+            #disable-next-line no-unused-vars
+            var varTags = union(parTags, {
+              'ts-name': deployment().properties.template.metadata.name
+              'ts-version': deployment().properties.template.metadata.version
+            })
+            """);
+
+        result.Should().NotHaveAnyDiagnostics();
+    }
+
+    [TestMethod]
+    public void Test_Issue18520()
+    {
+        var result = CompilationHelper.Compile(
+            ("main.bicep", """
+                module mod 'mod.bicep' = [for i in range(0, 10): if (i >= 0) {}]
+
+                module mod2 'mod2.bicep' = {
+                  params: {
+                    secureStrings: [for i in range(0, 10): mod[i]!.outputs.foo]
+                  }
+                }
+
+                """),
+            ("mod.bicep", """
+                @secure()
+                output foo string = 'foo'
+                """),
+            ("mod2.bicep", """
+                @secure()
+                type secureString = string
+
+                param secureStrings secureString[]
+                """));
+
+        result.Should().NotHaveAnyDiagnostics();
+    }
+
+    [TestMethod]
+    public void Test_Issue18603()
+    {
+        var result = CompilationHelper.Compile("""
+            @secure()
+            param secretValue string
+
+            resource keyVault 'Microsoft.KeyVault/vaults@2025-05-01' = {
+              name: 'name'
+              location: resourceGroup().location
+              properties: {
+                tenantId: subscription().tenantId
+                sku: {
+                  family: 'A'
+                  name: 'standard'
+                }
+                softDeleteRetentionInDays: 30
+                enableRbacAuthorization: true
+              }
+
+              @onlyIfNotExists()
+              resource clientSecret 'secrets' = {
+                name: 'secret'
+                properties: {
+                  value: secretValue
+                }
+              }
+            }
+            """);
+
+        result.Should().NotHaveAnyDiagnostics();
+        result.Template.Should().NotBeNull();
+        result.Template.Should().HaveValueAtPath("languageVersion", "2.0");
+    }
+
+    [TestMethod]
+    public void Syntactically_nested_existing_resources_with_explicit_dependencies_should_use_lv_2()
+    {
+        var result = CompilationHelper.Compile("""
+            resource keyVault 'Microsoft.KeyVault/vaults@2025-05-01' existing = {
+              name: 'name'
+
+              resource clientSecret 'secrets' existing = {
+                name: 'secret'
+                dependsOn: [
+                  c
+                ]
+              }
+            }
+
+
+            resource c 'Microsoft.Network/dnsZones@2018-05-01' = {
+              name: 'zone'
+              location: resourceGroup().location
+            }
+            """);
+
+        result.Should().NotHaveAnyDiagnostics();
+        result.Template.Should().NotBeNull();
+        result.Template.Should().HaveValueAtPath("languageVersion", "2.0");
+    }
+
+    [TestMethod]
+    public void Test_Issue19226_externalInputs_with_variable_references()
+    {
+        var result = CompilationHelper.CompileParams(
+            ("main.bicep", """
+                param foo object[]
+                """),
+            ("import.bicep", """
+            @export()
+            type KeyVaultAccessPolicyPermissions = {
+                keys: string[]
+                secrets: string[]
+                certificates: string[]
+                storage: string[]
+            }
+
+            @export()
+            var KeyVaultFullAccessPermissions KeyVaultAccessPolicyPermissions = {
+                keys: [
+                    'get'
+                    'delete'
+                    'list'
+                    'create'
+                    'import'
+                    'update'
+                    'recover'
+                    'backup'
+                    'restore'
+                    'sign'
+                    'verify'
+                    'wrapKey'
+                    'unwrapKey'
+                    'encrypt'
+                    'decrypt'
+                    'purge'
+                ]
+                secrets: [
+                    'get'
+                    'delete'
+                    'list'
+                    'set'
+                    'recover'
+                    'backup'
+                    'restore'
+                    'purge'
+                ]
+                certificates: [
+                    'get'
+                    'delete'
+                    'list'
+                    'create'
+                    'import'
+                    'update'
+                    'deleteissuers'
+                    'getissuers'
+                    'listissuers'
+                    'managecontacts'
+                    'manageissuers'
+                    'setissuers'
+                    'recover'
+                    'purge'
+                ]
+                storage: [
+                    'delete'
+                    'deletesas'
+                    'get'
+                    'getsas'
+                    'list'
+                    'listsas'
+                    'regeneratekey'
+                    'set'
+                    'setsas'
+                    'update'
+                    'recover'
+                    'backup'
+                    'restore'
+                    'purge'
+                ]
+            }
+            """),
+            ("parameters.bicepparam", """
+                using 'main.bicep'
+
+                import { KeyVaultFullAccessPermissions } from 'import.bicep'
+
+                var principals = externalInput('t', 'c')
+
+                param foo = [
+                    ...map(principals, objectId => {
+                        objectId: objectId
+                        permissions: KeyVaultFullAccessPermissions
+                    })
+                ]
+            """));
+
+        result.Should().NotHaveAnyDiagnostics();
+        result.Parameters.Should().HaveValueAtPath(
+          "parameters.foo.expression",
+          "[flatten(createArray(map(externalInputs('t_0'), lambda('objectId', createObject('objectId', lambdaVariables('objectId'), 'permissions', createObject('keys', createArray('get', 'delete', 'list', 'create', 'import', 'update', 'recover', 'backup', 'restore', 'sign', 'verify', 'wrapKey', 'unwrapKey', 'encrypt', 'decrypt', 'purge'), 'secrets', createArray('get', 'delete', 'list', 'set', 'recover', 'backup', 'restore', 'purge'), 'certificates', createArray('get', 'delete', 'list', 'create', 'import', 'update', 'deleteissuers', 'getissuers', 'listissuers', 'managecontacts', 'manageissuers', 'setissuers', 'recover', 'purge'), 'storage', createArray('delete', 'deletesas', 'get', 'getsas', 'list', 'listsas', 'regeneratekey', 'set', 'setsas', 'update', 'recover', 'backup', 'restore', 'purge')))))))]");
+
+        result.Parameters.Should().HaveJsonAtPath(
+          "externalInputDefinitions",
+          """
+          {
+            "t_0": {
+              "kind": "t",
+              "config": "c"
+            }
+          }
+          """
+        );
+    }
+
+    [TestMethod]
+    public void Test_Issue19212_externalInputs_with_variables()
+    {
+        var result = CompilationHelper.CompileParams(
+            ("parameters.bicepparam", """
+                using none
+
+                var example = 'example'
+
+                param varWithLiteral = [
+                  example
+                  'literal'
+                ]
+
+                param varWithExternalInput = [
+                  example
+                  externalInput('foo.bar', 'baz')
+                ]
+            """));
+
+        result.Should().NotHaveAnyDiagnostics();
+        result.Parameters.Should().HaveJsonAtPath(
+            "parameters.varWithLiteral.value",
+            """
+            [
+                "example",
+                "literal"
+            ]
+            """);
+        result.Parameters.Should().HaveValueAtPath(
+          "parameters.varWithExternalInput.expression",
+          "[createArray('example', externalInputs('foo_bar_0'))]");
+
+        result.Parameters.Should().HaveJsonAtPath(
+          "externalInputDefinitions",
+          """
+          {
+            "foo_bar_0": {
+              "kind": "foo.bar",
+              "config": "baz"
+            }
+          }
+          """
+        );
+    }
+
+    [TestMethod]
+    public void Test_Issue19228_externalInputs_analysis_should_not_cause_crash_for_invalid_syntax()
+    {
+        var result = CompilationHelper.CompileParams(
+            ("parameters.bicepparam", """
+                using 'main.bicep'
+
+                param foo = externalInput('t',)
+              """),
+            ("main.bicep", """
+                param foo string
+            """));
+        result.Should().OnlyContainDiagnostic(
+            "BCP009",
+            DiagnosticLevel.Error,
+            "Expected a literal value, an array, an object, a parenthesized expression, or a function call at this location.");
     }
 }

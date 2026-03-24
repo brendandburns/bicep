@@ -122,7 +122,7 @@ namespace Bicep.Core.PrettyPrintV2
                 .Concat(
                     this.Spread(
                         syntax.Keyword,
-                        syntax.SpecificationString,
+                        syntax.Alias,
                         syntax.WithClause));
 
         private IEnumerable<Document> LayoutExtensionWithClauseSyntax(ExtensionWithClauseSyntax syntax) =>
@@ -464,7 +464,13 @@ namespace Bicep.Core.PrettyPrintV2
         private IEnumerable<Document> LayoutUsingDeclarationSyntax(UsingDeclarationSyntax syntax) =>
             this.Spread(
                 syntax.Keyword,
-                syntax.Path);
+                syntax.Path,
+                syntax.WithClause);
+
+        private IEnumerable<Document> LayoutUsingWithClauseSyntax(UsingWithClauseSyntax syntax) =>
+            this.Spread(
+                syntax.Keyword,
+                syntax.Config);
 
         private IEnumerable<Document> LayoutExtendsDeclarationSyntax(ExtendsDeclarationSyntax syntax) =>
             this.Spread(
@@ -821,10 +827,10 @@ namespace Bicep.Core.PrettyPrintV2
                     this.ForceBreak();
                 }
 
-                if (triviaItem is DisableNextLineDiagnosticsSyntaxTrivia disableNextLineDirective)
+                if (triviaItem is DiagnosticsPragmaSyntaxTrivia diagnosticsPragma)
                 {
-                    var diagnosticCodes = string.Join(" ", disableNextLineDirective.DiagnosticCodes.Select(x => x.Text));
-                    yield return $"#disable-next-line {diagnosticCodes}";
+                    var diagnosticCodes = string.Join(" ", diagnosticsPragma.DiagnosticCodes.Select(x => x.Text));
+                    yield return $"#{diagnosticsPragma.PragmaType.GetKeyword()} {diagnosticCodes}";
                     continue;
                 }
 

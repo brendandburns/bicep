@@ -60,12 +60,6 @@ namespace Bicep.Core.Emit
                 return "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#";
             }
 
-            // The feature flag is checked during scope validation, so just always handle it here.
-            if (targetScope.HasFlag(ResourceScope.DesiredStateConfiguration))
-            {
-                return "https://aka.ms/dsc/schemas/v3/bundled/config/document.json"; // the trailing '#' is against DSC's schema
-            }
-
             return "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#";
         }
 
@@ -76,7 +70,7 @@ namespace Bicep.Core.Emit
         public TemplateWriter(SemanticModel semanticModel)
         {
             ExpressionBuilder = new ExpressionBuilder(new EmitterContext(semanticModel));
-            declaredTypesByName = ImmutableDictionary<string, DeclaredTypeExpression>.Empty;
+            declaredTypesByName = [];
         }
 
         public void Write(SourceAwareJsonTextWriter writer)
@@ -114,7 +108,7 @@ namespace Bicep.Core.Emit
             if (Context.Settings.UseExperimentalTemplateLanguageVersion)
             {
                 // Note (tasmalligan): 2.2 epxerimental is being used for extensibility migration and local deploy
-                if (Context.SemanticModel.Features.ExtensibilityV2EmittingEnabled)
+                if (Context.SemanticModel.Features.ModuleExtensionConfigsEnabled)
                 {
                     emitter.EmitProperty(LanguageVersionPropertyName, "2.2-experimental");
                 }
@@ -246,6 +240,7 @@ namespace Bicep.Core.Emit
                 (expression.MaxLength, LanguageConstants.ParameterMaxLengthPropertyName),
                 (expression.MinValue, LanguageConstants.ParameterMinValuePropertyName),
                 (expression.MaxValue, LanguageConstants.ParameterMaxValuePropertyName),
+                (expression.UserDefinedConstraint, LanguageConstants.ParameterUserDefinedConstraintPropertyName),
             })
             {
                 if (modifier is not null)
@@ -388,6 +383,8 @@ namespace Bicep.Core.Emit
         private ObjectExpression TypePropertiesForTypeExpression(TypeExpression typeExpression) => typeExpression switch
         {
             // ARM primitive types
+            AmbientTypeReferenceExpression ambientTypeReference when ambientTypeReference.Name == LanguageConstants.TypeNameAny
+                => ExpressionFactory.CreateObject([], ambientTypeReference.SourceSyntax),
             AmbientTypeReferenceExpression ambientTypeReference
                 => ExpressionFactory.CreateObject(TypeProperty(ambientTypeReference.Name, ambientTypeReference.SourceSyntax).AsEnumerable(),
                     ambientTypeReference.SourceSyntax),
@@ -502,18 +499,23 @@ namespace Bicep.Core.Emit
                     _ => typePointerProperty.Value,
                 };
 
-                return ExpressionFactory.CreateObject(new[]
+                List<ObjectPropertyExpression> properties = new();
+                if (TryGetNonLiteralTypeName(DerivedType) is string typeConstraintValue)
                 {
-                    TypeProperty(GetNonLiteralTypeName(DerivedType), sourceSyntax),
-                    ExpressionFactory.CreateObjectProperty(LanguageConstants.ParameterMetadataPropertyName,
-                        ExpressionFactory.CreateObject(
-                            ExpressionFactory.CreateObjectProperty(
-                                LanguageConstants.MetadataResourceDerivedTypePropertyName,
-                                metadataValue,
-                                sourceSyntax).AsEnumerable(),
-                            sourceSyntax),
+                    properties.Add(TypeProperty(typeConstraintValue, sourceSyntax));
+                }
+
+                properties.Add(ExpressionFactory.CreateObjectProperty(
+                    LanguageConstants.ParameterMetadataPropertyName,
+                    ExpressionFactory.CreateObject(
+                        ExpressionFactory.CreateObjectProperty(
+                            LanguageConstants.MetadataResourceDerivedTypePropertyName,
+                            metadataValue,
+                            sourceSyntax).AsEnumerable(),
                         sourceSyntax),
-                });
+                    sourceSyntax));
+
+                return ExpressionFactory.CreateObject(properties, sourceSyntax);
             }
         }
 
@@ -713,6 +715,11 @@ namespace Bicep.Core.Emit
                 throw new ArgumentException("Property access base expression did not resolve to the 'sys' namespace.");
             }
 
+            if (qualifiedAmbientType.Name == LanguageConstants.TypeNameAny)
+            {
+                return ExpressionFactory.CreateObject([], qualifiedAmbientType.SourceSyntax);
+            }
+
             return ExpressionFactory.CreateObject(TypeProperty(qualifiedAmbientType.Name, qualifiedAmbientType.SourceSyntax).AsEnumerable(),
                 qualifiedAmbientType.SourceSyntax);
         }
@@ -814,16 +821,17 @@ namespace Bicep.Core.Emit
         {
             var (nullable, nonLiteralTypeName, allowedValues) = TypeHelper.TryRemoveNullability(expression.ExpressedUnionType) switch
             {
-                UnionType nonNullableUnion => (true, GetNonLiteralTypeName(nonNullableUnion.Members.First().Type), GetAllowedValuesForUnionType(nonNullableUnion, expression.SourceSyntax)),
-                TypeSymbol nonNullable => (true, GetNonLiteralTypeName(nonNullable), SingleElementArray(ToLiteralValue(nonNullable))),
-                _ => (false, GetNonLiteralTypeName(expression.ExpressedUnionType.Members.First().Type), GetAllowedValuesForUnionType(expression.ExpressedUnionType, expression.SourceSyntax)),
+                UnionType nonNullableUnion => (true, TryGetNonLiteralTypeName(nonNullableUnion.Members.First().Type), GetAllowedValuesForUnionType(nonNullableUnion, expression.SourceSyntax)),
+                TypeSymbol nonNullable => (true, TryGetNonLiteralTypeName(nonNullable), SingleElementArray(ToLiteralValue(nonNullable))),
+                _ => (false, TryGetNonLiteralTypeName(expression.ExpressedUnionType.Members.First().Type), GetAllowedValuesForUnionType(expression.ExpressedUnionType, expression.SourceSyntax)),
             };
 
-            var properties = new List<ObjectPropertyExpression>
+            List<ObjectPropertyExpression> properties = new();
+            if (nonLiteralTypeName is not null)
             {
-                TypeProperty(nonLiteralTypeName, expression.SourceSyntax),
-                AllowedValuesProperty(allowedValues, expression.SourceSyntax),
-            };
+                properties.Add(TypeProperty(nonLiteralTypeName, expression.SourceSyntax));
+            }
+            properties.Add(AllowedValuesProperty(allowedValues, expression.SourceSyntax));
 
             if (nullable)
             {
@@ -982,16 +990,17 @@ namespace Bicep.Core.Emit
             _ => throw new ArgumentException("Union types used in ARM type checks must be composed entirely of literal types"),
         };
 
-        private static string GetNonLiteralTypeName(TypeSymbol? type) => type switch
+        private static string? TryGetNonLiteralTypeName(TypeSymbol? type) => type switch
         {
             StringLiteralType or StringType => "string",
             IntegerLiteralType or IntegerType => "int",
             BooleanLiteralType or BooleanType => "bool",
             ObjectType or DiscriminatedObjectType => "object",
             ArrayType => "array",
-            UnionType @union => @union.Members.Select(m => GetNonLiteralTypeName(m.Type)).Distinct().Single(),
-            // This would have been caught by the DeclaredTypeManager during initial type assignment
-            _ => throw new ArgumentException($"Cannot resolve nonliteral type name of type {type?.GetType().Name}"),
+            UnionType @union when
+                @union.Members.Select(m => TryGetNonLiteralTypeName(m.Type)).ToHashSet() is { } memberLiteralNames &&
+                memberLiteralNames.Count == 1 => memberLiteralNames.Single(),
+            _ => null,
         };
 
         private void EmitVariablesIfPresent(ExpressionEmitter emitter, IEnumerable<DeclaredVariableExpression> variables)
@@ -1040,12 +1049,13 @@ namespace Bicep.Core.Emit
             }
 
             // TODO: Remove the EmitExtensions if conditions once ARM w37 is deployed to all regions.
-            if (Context.SemanticModel.Features.ExtensibilityV2EmittingEnabled)
+            if (Context.SemanticModel.Features.ModuleExtensionConfigsEnabled)
             {
                 EmitExtensions(emitter, extensions);
             }
             else
             {
+                // TODO(extensibility): Consider removing this
                 EmitImports(emitter, extensions);
             }
         }
@@ -1110,60 +1120,13 @@ namespace Bicep.Core.Emit
                     // Type checking should have validated that the config name is not an expression (e.g. string interpolation), if we get a null value it means something
                     // was wrong with type checking validation.
                     var extensionConfigName = configProperty.TryGetKeyText() ?? throw new UnreachableException("Expressions are not allowed as config names.");
-                    var configType = extension.Settings.ConfigurationType ?? throw new UnreachableException("Config type must be specified.");
-                    var extensionConfigType = GetExtensionConfigType(extensionConfigName, configType);
 
                     emitter.EmitObjectProperty(extensionConfigName, () =>
                     {
-                        switch (extensionConfigType)
-                        {
-                            case StringType:
-                                if (extensionConfigType.ValidationFlags.HasFlag(TypeSymbolValidationFlags.IsSecure))
-                                {
-                                    emitter.EmitProperty("type", "secureString");
-                                }
-                                else
-                                {
-                                    emitter.EmitProperty("type", "string");
-                                }
-                                break;
-                            case IntegerType:
-                                emitter.EmitProperty("type", "int");
-                                break;
-                            case BooleanType:
-                                emitter.EmitProperty("type", "bool");
-                                break;
-                            case ArrayType:
-                                emitter.EmitProperty("type", "array");
-                                break;
-                            case ObjectType:
-                                if (extensionConfigType.ValidationFlags.HasFlag(TypeSymbolValidationFlags.IsSecure))
-                                {
-                                    emitter.EmitProperty("type", "secureObject");
-                                }
-                                else
-                                {
-                                    emitter.EmitProperty("type", "object");
-                                }
-                                break;
-                            default:
-                                throw new ArgumentException($"Config name: '{extensionConfigName}' specified an unsupported type: '{extensionConfigType}'. Supported types are: 'string', 'secureString', 'int', 'bool', 'array', 'secureObject', 'object'.");
-                        }
-
                         emitter.EmitProperty("defaultValue", configProperty.Value);
                     });
                 }
             });
-        }
-
-        private static TypeSymbol GetExtensionConfigType(string configName, ObjectType configType)
-        {
-            if (configType.Properties.TryGetValue(configName) is { } configItem)
-            {
-                return configItem.TypeReference.Type;
-            }
-
-            throw new UnreachableException($"Configuration name: '{configName}' does not exist as part of extension configuration.");
         }
 
         private ExtensionExpression GetExtensionForLocalDeploy()
@@ -1226,6 +1189,18 @@ namespace Bicep.Core.Emit
             }
         }
 
+        private void EmitResourceExtensionReference(ExpressionEmitter emitter, string extensionAlias)
+        {
+            if (this.Context.SemanticModel.Features.ModuleExtensionConfigsEnabled)
+            {
+                emitter.EmitProperty("extension", extensionAlias);
+            }
+            else
+            {
+                emitter.EmitProperty("import", extensionAlias);
+            }
+        }
+
         private void EmitResource(ExpressionEmitter emitter, ImmutableArray<ExtensionExpression> extensions, DeclaredResourceExpression resource)
         {
             var metadata = resource.ResourceMetadata;
@@ -1252,14 +1227,7 @@ namespace Bicep.Core.Emit
                 var extensionSymbol = extensions.FirstOrDefault(i => metadata.Type.DeclaringNamespace.AliasNameEquals(i.Name));
                 if (extensionSymbol is not null)
                 {
-                    if (this.Context.SemanticModel.Features.ExtensibilityV2EmittingEnabled)
-                    {
-                        emitter.EmitProperty("extension", extensionSymbol.Name);
-                    }
-                    else
-                    {
-                        emitter.EmitProperty("import", extensionSymbol.Name);
-                    }
+                    EmitResourceExtensionReference(emitter, extensionSymbol.Name);
                 }
 
                 // Emit the options property if there are entries in the DecoratorConfig dictionary
@@ -1281,7 +1249,7 @@ namespace Bicep.Core.Emit
                 }
 
                 if (metadata.IsAzResource ||
-                    this.Context.SemanticModel.Features.ExtensibilityV2EmittingEnabled)
+                    this.Context.SemanticModel.Features.ModuleExtensionConfigsEnabled)
                 {
                     emitter.EmitProperty("type", metadata.TypeReference.FormatType());
                     if (metadata.TypeReference.ApiVersion is not null)
@@ -1439,16 +1407,6 @@ namespace Bicep.Core.Emit
                                                     // write a single property copy loop
                                                     emitter.EmitObjectProperty(extConfigPropertyName, () => { emitter.EmitCopyProperty(() => { emitter.EmitArray(() => { emitter.EmitCopyObject("value", @for.Expression, @for.Body, "value"); }, @for.SourceSyntax); }); });
                                                 }
-                                                else if (extConfigPropertyExpr.Value is ResourceReferenceExpression resource &&
-                                                    module.Symbol.TryGetModuleType() is ModuleType moduleType &&
-                                                    moduleType.TryGetExtensionConfigPropertyType(extAlias, extConfigPropertyName) is ResourceParameterType)
-                                                {
-                                                    // TODO(kylealbert): verify this
-                                                    // This is a resource being passed into a module, we actually want to pass in its id
-                                                    // rather than the whole resource.
-                                                    var idExpression = new PropertyAccessExpression(resource.SourceSyntax, resource, "id", AccessExpressionFlags.None);
-                                                    emitter.EmitProperty(extConfigPropertyName, ExpressionEmitter.ConvertModuleExtensionConfig(idExpression));
-                                                }
                                                 else
                                                 {
                                                     // the value is not a for-expression - can emit normally
@@ -1457,12 +1415,13 @@ namespace Bicep.Core.Emit
                                             }
                                         }, extConfigObjExpr.SourceSyntax);
                                 }
-                                else if (extAliasPropertyExpr.Value is PropertyAccessExpression or TernaryExpression)
+                                else if (extAliasPropertyExpr.Value is PropertyAccessExpression or TernaryExpression) // covers extension inheritance cases
                                 {
                                     emitter.EmitLanguageExpression(extAliasPropertyExpr.Value);
                                 }
                                 else
                                 {
+                                    // There needs to be custom emission for the object within extension configs to handle the layer of value vs key vault reference, so diagnostics need to prevent this from happening.
                                     throw new NotImplementedException($"Expression emit is not handled for {extAliasPropertyExpr.Value.GetType().Name}");
                                 }
                             }, extAliasPropertyExpr.SourceSyntax);
@@ -1474,7 +1433,7 @@ namespace Bicep.Core.Emit
         {
             emitter.EmitObject(() =>
             {
-                emitter.EmitProperty("extension", "az0synthesized");
+                EmitResourceExtensionReference(emitter, "az0synthesized");
 
                 var body = module.Body;
                 if (body is ForLoopExpression forLoop)
@@ -1497,7 +1456,7 @@ namespace Bicep.Core.Emit
 
                     EmitModuleParameters(emitter, module);
 
-                    if (this.Context.SemanticModel.Features is { ExtensibilityEnabled: true, ModuleExtensionConfigsEnabled: true })
+                    if (this.Context.SemanticModel.Features.ModuleExtensionConfigsEnabled)
                     {
                         EmitModuleExtensionConfigs(emitter, module);
                     }
@@ -1513,9 +1472,9 @@ namespace Bicep.Core.Emit
                     jsonWriter.AddNestedSourceMap(moduleJsonWriter.TrackingJsonWriter);
                     emitter.EmitProperty("template", moduleTextWriter.ToString());
 
-                    if (moduleBicepFile?.Uri is { } sourceUri)
+                    if (moduleBicepFile?.FileHandle.Uri is { } sourceUri)
                     {
-                        emitter.EmitProperty("sourceUri", sourceUri.AbsoluteUri);
+                        emitter.EmitProperty("sourceUri", sourceUri.ToUriString());
                     }
                 });
 
@@ -1554,7 +1513,7 @@ namespace Bicep.Core.Emit
                 }
 
                 emitter.EmitProperty("type", NestedDeploymentResourceType);
-                emitter.EmitProperty("apiVersion", EmitConstants.GetNestedDeploymentResourceApiVersion(Context.SemanticModel.Features));
+                emitter.EmitProperty("apiVersion", EmitConstants.NestedDeploymentResourceApiVersion);
 
                 // emit all properties apart from 'params'. In practice, this currently only allows 'name', but we may choose to allow other top-level resource properties in future.
                 // params requires special handling (see below).
@@ -1596,7 +1555,7 @@ namespace Bicep.Core.Emit
 
                     EmitModuleParameters(emitter, module);
 
-                    if (Context.SemanticModel.Features is { ExtensibilityEnabled: true, ModuleExtensionConfigsEnabled: true })
+                    if (Context.SemanticModel.Features.ModuleExtensionConfigsEnabled)
                     {
                         EmitModuleExtensionConfigs(emitter, module);
                     }
@@ -1687,7 +1646,7 @@ namespace Bicep.Core.Emit
                         break;
                     }
 
-                    emitter.EmitResourceIdReference(resource, reference.IndexContext);
+                    emitter.EmitFullyQualifiedResourceId(resource, reference.IndexContext);
                     break;
                 case ModuleReferenceExpression { Module: ModuleSymbol module } reference:
                     if (module.IsCollection && reference.IndexContext?.Index is null)
@@ -1699,7 +1658,7 @@ namespace Bicep.Core.Emit
                         break;
                     }
 
-                    emitter.EmitResourceIdReference(module, reference.IndexContext);
+                    emitter.EmitFullyQualifiedResourceId(module, reference.IndexContext);
 
                     break;
                 default:

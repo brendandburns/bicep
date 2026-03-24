@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Diagnostics.CodeAnalysis;
+using Bicep.Core.Extensions;
 using Bicep.Core.FileSystem;
 using Bicep.Core.Samples;
 using Bicep.Core.Semantics;
@@ -16,21 +17,13 @@ namespace Bicep.Core.IntegrationTests.Semantics
     [TestClass]
     public class ParamsSemanticModelTests
     {
-        private static ServiceBuilder Services => new ServiceBuilder()
-            .WithEmptyAzResources()
-            .WithEnvironmentVariables(
-                ("stringEnvVariableName", "test"),
-                ("intEnvVariableName", "100"),
-                ("boolEnvironmentVariable", "true")
-            );
-
         [NotNull]
         public TestContext? TestContext { get; set; }
 
         private async Task<SemanticModel> CreateSemanticModel(ServiceBuilder services, string paramsFilePath)
         {
             var compiler = services.Build().GetCompiler();
-            var compilation = await compiler.CreateCompilation(PathHelper.FilePathToFileUrl(paramsFilePath));
+            var compilation = await compiler.CreateCompilation(PathHelper.FilePathToFileUrl(paramsFilePath).ToIOUri());
 
             return compilation.GetEntrypointSemanticModel();
         }
@@ -42,7 +35,8 @@ namespace Bicep.Core.IntegrationTests.Semantics
         {
             var data = baselineData.GetData(TestContext);
 
-            var model = await CreateSemanticModel(Services, data.Parameters.OutputFilePath);
+            var services = await CreateServicesAsync();
+            var model = await CreateSemanticModel(services, data.Parameters.OutputFilePath);
 
             // use a deterministic order
             var diagnostics = model.GetAllDiagnostics()
@@ -64,7 +58,8 @@ namespace Bicep.Core.IntegrationTests.Semantics
         {
             var data = baselineData.GetData(TestContext);
 
-            var model = await CreateSemanticModel(Services, data.Parameters.OutputFilePath);
+            var services = await CreateServicesAsync();
+            var model = await CreateSemanticModel(services, data.Parameters.OutputFilePath);
 
             var symbols = SymbolCollector
                 .CollectSymbols(model)
@@ -82,5 +77,53 @@ namespace Bicep.Core.IntegrationTests.Semantics
             data.Symbols.WriteToOutputFolder(sourceTextWithDiags);
             data.Symbols.ShouldHaveExpectedValue();
         }
+
+        [TestMethod]
+        public async Task Params_file_should_handle_registry_module_resource_derived_types()
+        {
+            const string moduleRef = "br:mockregistry.io/route/table:v1";
+
+            const string moduleContent = """
+                param routes resourceInput<'Microsoft.Network/routeTables@2024-07-01'>.properties.routes?
+            """;
+
+            const string paramsContent = $@"using '{moduleRef}'
+                param routes = [
+                    {{
+                        id: 'myroute'
+                        properties: {{
+                            addressPrefix: '0.0.0.0/0'
+                            nextHopType: 'Internet'
+                        }}
+                    }}
+                ]
+            ";
+
+            var artifactManager = await MockRegistry.CreateDefaultExternalArtifactManager(TestContext);
+            await artifactManager.PublishRegistryModule(moduleRef, moduleContent);
+
+            var paramsFilePath = FileHelper.SaveResultFile(TestContext, "main.bicepparam", paramsContent);
+            var fileUri = PathHelper.FilePathToFileUrl(paramsFilePath);
+
+            var services = await CreateServicesAsync();
+            services = services.WithTestArtifactManager(artifactManager);
+
+            var compiler = services.Build().GetCompiler();
+            var compilation = await compiler.CreateCompilation(fileUri.ToIOUri());
+
+            var diagnostics = compilation.GetEntrypointSemanticModel().GetAllDiagnostics().ExcludingLinterDiagnostics();
+
+            diagnostics.Should().BeEmpty();
+        }
+
+        private async Task<ServiceBuilder> CreateServicesAsync()
+            => new ServiceBuilder()
+                .WithFeatureOverrides(new(TestContext))
+                .WithEnvironmentVariables(
+                    ("stringEnvVariableName", "test"),
+                    ("intEnvVariableName", "100"),
+                    ("boolEnvironmentVariable", "true")
+                )
+                .WithTestArtifactManager(await MockRegistry.CreateDefaultExternalArtifactManager(TestContext));
     }
 }

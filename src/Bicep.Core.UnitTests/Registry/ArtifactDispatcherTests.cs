@@ -12,6 +12,7 @@ using Bicep.Core.Syntax;
 using Bicep.Core.UnitTests.Assertions;
 using Bicep.Core.UnitTests.Mock;
 using Bicep.Core.UnitTests.Utils;
+using Bicep.IO.Abstraction;
 using Bicep.IO.InMemory;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -88,9 +89,7 @@ namespace Bicep.Core.UnitTests.Registry
             mock.Setup(m => m.IsArtifactRestoreRequired(validRef3)).Returns(true);
 
             Uri? validRefLocalUri = new("untitled://validRef");
-            mock.Setup(m => m.TryGetLocalArtifactEntryPointUri(validRef)).Returns(ResultHelper.Create(validRefLocalUri, @null));
             Uri? validRef3LocalUri = new("untitled://validRef3");
-            mock.Setup(m => m.TryGetLocalArtifactEntryPointUri(validRef3)).Returns(ResultHelper.Create(validRef3LocalUri, @null));
 
             mock.Setup(m => m.RestoreArtifacts(It.IsAny<IEnumerable<ArtifactReference>>()))
                 .ReturnsAsync(new Dictionary<ArtifactReference, DiagnosticBuilder.DiagnosticBuilderDelegate>
@@ -126,14 +125,6 @@ namespace Bicep.Core.UnitTests.Registry
             goodAvailabilityBuilder3!.Should().HaveCode("BCP190");
             goodAvailabilityBuilder3!.Should().HaveMessage("The artifact with reference \"mock:validRef3\" has not been restored.");
 
-            dispatcher.TryGetLocalArtifactEntryPointUri(validRef).IsSuccess(out var @uri, out var entryPointBuilder).Should().BeTrue();
-            @uri.Should().Be(new Uri("untitled://validRef"));
-            entryPointBuilder!.Should().BeNull();
-
-            dispatcher.TryGetLocalArtifactEntryPointUri(validRef3).IsSuccess(out @uri, out var entryPointBuilder3).Should().BeTrue();
-            @uri.Should().Be(new Uri("untitled://validRef3"));
-            entryPointBuilder3!.Should().BeNull();
-
             (await dispatcher.RestoreArtifacts(new[] { validRef, validRef3 }, false)).Should().BeTrue();
 
             dispatcher.GetArtifactRestoreStatus(validRef3, out var goodAvailabilityBuilder3AfterRestore).Should().Be(ArtifactRestoreStatus.Failed);
@@ -147,7 +138,7 @@ namespace Bicep.Core.UnitTests.Registry
         {
             // Arrange.
             var configManagerMock = StrictMock.Of<IConfigurationManager>();
-            configManagerMock.SetupSequence(m => m.GetConfiguration(It.IsAny<Uri>()))
+            configManagerMock.SetupSequence(m => m.GetConfiguration(It.IsAny<IOUri>()))
                 .Returns(BicepTestConstants.CreateMockConfiguration())
                 .Returns(BicepTestConstants.CreateMockConfiguration())
                 .Returns(changedConfiguration);
@@ -231,7 +222,7 @@ namespace Bicep.Core.UnitTests.Registry
 
         private static ModuleDeclarationSyntax CreateModule(string reference)
         {
-            var file = BicepTestConstants.SourceFileFactory.CreateBicepFile(new Uri("untitled://hello"), $"module foo '{reference}' = {{}}");
+            var file = BicepTestConstants.SourceFileFactory.CreateBicepFile(DummyFileHandle.Default, $"module foo '{reference}' = {{}}");
             return file.ProgramSyntax.Declarations.OfType<ModuleDeclarationSyntax>().Single();
         }
 
@@ -252,6 +243,8 @@ namespace Bicep.Core.UnitTests.Registry
             public override bool Equals(object? obj) => obj is MockModuleReference other && this.Reference.Equals(other.Reference);
 
             public override int GetHashCode() => this.Reference.GetHashCode();
+
+            public override ResultWithDiagnosticBuilder<IFileHandle> TryGetEntryPointFileHandle() => new(DummyFileHandle.Default);
         }
 
         private class MockArtifactRegistryProvider(IEnumerable<IArtifactRegistry> registries) : ArtifactRegistryProvider(registries)

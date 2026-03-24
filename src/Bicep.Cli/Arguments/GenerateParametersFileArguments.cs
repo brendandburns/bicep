@@ -2,12 +2,13 @@
 // Licensed under the MIT License.
 
 using Bicep.Cli.Helpers;
+using Bicep.Core;
 using Bicep.Core.Emit.Options;
-using Bicep.Core.FileSystem;
+using Bicep.IO.Abstraction;
 
 namespace Bicep.Cli.Arguments
 {
-    public class GenerateParametersFileArguments : ArgumentsBase
+    public class GenerateParametersFileArguments : ArgumentsBase, IInputOutputArguments<GenerateParametersFileArguments>
     {
         public GenerateParametersFileArguments(string[] args) : base(Constants.Command.GenerateParamsFile)
         {
@@ -94,17 +95,14 @@ namespace Bicep.Cli.Arguments
             {
                 throw new CommandLineException($"The --outdir and --outfile parameters cannot both be used");
             }
-
-            if (OutputDir is not null)
-            {
-                var outputDir = PathHelper.ResolvePath(OutputDir);
-
-                if (!Directory.Exists(outputDir))
-                {
-                    throw new CommandLineException(string.Format(CliResources.DirectoryDoesNotExistFormat, outputDir));
-                }
-            }
         }
+
+        public static Func<GenerateParametersFileArguments, IOUri, string> OutputFileExtensionResolver { get; } = (args, _) => args.OutputFormat switch
+        {
+            OutputFormatOption.Json => $".parameters{LanguageConstants.JsonFileExtension}",
+            OutputFormatOption.BicepParam => LanguageConstants.ParamsFileExtension,
+            _ => throw new ArgumentOutOfRangeException(nameof(args.OutputFormat), $"Unsupported output format: {args.OutputFormat}")
+        };
 
         public bool OutputToStdOut { get; }
 

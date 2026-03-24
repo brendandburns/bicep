@@ -52,7 +52,7 @@ public class ExpressionBuilder
     }
 
     public ExpressionBuilder(EmitterContext Context)
-        : this(Context, ImmutableDictionary<LocalVariableSymbol, Expression>.Empty)
+        : this(Context, [])
     {
     }
 
@@ -481,12 +481,13 @@ public class ExpressionBuilder
             .ToImmutableArray();
 
         var variables = Context.SemanticModel.Root.VariableDeclarations
-            .Where(x => !Context.VariablesToInline.Contains(x))
+            .Where(x => !Context.SemanticModel.SymbolsToInline.VariablesToInline.Contains(x))
             .Select(x => ConvertWithoutLowering(x.DeclaringSyntax))
             .OfType<DeclaredVariableExpression>()
             .ToImmutableArray();
 
         var resources = Context.SemanticModel.DeclaredResources
+            .Where(x => !Context.SemanticModel.SymbolsToInline.ExistingResourcesToInline.Contains(x.Symbol))
             .Select(x => ConvertWithoutLowering(x.Symbol.DeclaringSyntax))
             .OfType<DeclaredResourceExpression>()
             .ToImmutableArray();
@@ -590,7 +591,7 @@ public class ExpressionBuilder
         return new DeclaredModuleExpression(
             syntax,
             symbol,
-            Context.ModuleScopeData[symbol],
+            Context.SemanticModel.ModuleScopeData[symbol],
             body,
             bodyExpression,
             parameters is not null ? ConvertWithoutLowering(parameters.Value) : null,
@@ -608,11 +609,11 @@ public class ExpressionBuilder
             .OrderBy(t => t.TargetKey)  // order to generate a deterministic template
             .Select(t => t.Expression)];
 
-    private DeclaredResourceExpression ConvertResource(ResourceDeclarationSyntax syntax)
-    {
-        var resource = Context.SemanticModel.ResourceMetadata.TryLookup(syntax) as DeclaredResourceMetadata
-            ?? throw new InvalidOperationException("Failed to find resource in cache");
+    public Expression? GetResourceCondition(DeclaredResourceMetadata resourceMetadata)
+        => GetResourceBody(resourceMetadata).condition;
 
+    private (Expression? condition, LoopExpressionContext? loop, SyntaxBase body) GetResourceBody(DeclaredResourceMetadata resource)
+    {
         Expression? condition = null;
         LoopExpressionContext? loop = null;
 
@@ -685,6 +686,16 @@ public class ExpressionBuilder
             body = @if.Body;
         }
 
+        return (condition, loop, body);
+    }
+
+    private DeclaredResourceExpression ConvertResource(ResourceDeclarationSyntax syntax)
+    {
+        var resource = Context.SemanticModel.ResourceMetadata.TryLookup(syntax) as DeclaredResourceMetadata
+            ?? throw new InvalidOperationException("Failed to find resource in cache");
+
+        var (condition, loop, body) = GetResourceBody(resource);
+
         var propertiesToOmit = resource.IsAzResource ? AzResourcePropertiesToOmit : NonAzResourcePropertiesToOmit;
         var properties = ((ObjectSyntax)body).Properties
             .Where(x => x.TryGetKeyText() is not { } key || !propertiesToOmit.Contains(key))
@@ -709,11 +720,11 @@ public class ExpressionBuilder
         return new DeclaredResourceExpression(
             syntax,
             resource,
-            Context.ResourceScopeData[resource],
+            Context.SemanticModel.ResourceScopeData[resource],
             body,
             bodyExpression,
             BuildDependencyExpressions(resource.Symbol, body),
-            ImmutableDictionary<string, ArrayExpression>.Empty);
+            []);
     }
 
     private Expression ConvertArray(ArraySyntax array)
@@ -812,7 +823,8 @@ public class ExpressionBuilder
                     [.. function.Arguments.Select(a => ConvertWithoutLowering(a.Expression))]);
 
             case InstanceFunctionCallSyntax method:
-                var (baseSyntax, indexExpression) = SyntaxHelper.UnwrapArrayAccessSyntax(method.BaseExpression);
+                var (baseSyntax, indexExpression) = SyntaxHelper.UnwrapArrayAccessSyntax(
+                    SyntaxHelper.UnwrapNonNullAssertion(method.BaseExpression));
                 var baseSymbol = Context.SemanticModel.GetSymbolInfo(baseSyntax);
 
                 if (baseSymbol is INamespaceSymbol namespaceSymbol)
@@ -872,8 +884,7 @@ public class ExpressionBuilder
 
     private Expression ConvertFunction(FunctionCallSyntaxBase functionCall)
     {
-        if (Context.Settings.FileKind == BicepSourceFileKind.BicepFile &&
-            Context.FunctionVariables.GetValueOrDefault(functionCall) is { } functionVariable)
+        if (Context.FunctionVariables.GetValueOrDefault(functionCall) is { } functionVariable)
         {
             return new SynthesizedVariableReferenceExpression(functionCall, functionVariable.Name);
         }
@@ -1039,6 +1050,10 @@ public class ExpressionBuilder
                 propertyAccess,
                 ConvertWithoutLowering(propertyAccess.BaseExpression),
                 propertyAccess.PropertyName.IdentifierName,
+                IsSecureOutput: TypeHelper.SatisfiesCondition(
+                    Context.SemanticModel.GetTypeInfo(childPropertyAccess.BaseExpression),
+                    x => (x as ModuleType)?.TryGetOutputType(propertyAccess.PropertyName.IdentifierName) is { } outputType &&
+                        TypeHelper.IsOrContainsSecureType(outputType)),
                 flags);
         }
 
@@ -1078,19 +1093,17 @@ public class ExpressionBuilder
                 return new ParametersReferenceExpression(variableAccessSyntax, parameterSymbol);
 
             case ParameterAssignmentSymbol parameterSymbol:
-                if (Context.ExternalInputReferences.ParametersReferences.Contains(parameterSymbol))
+                if (Context.SemanticModel.SymbolsToInline.ParameterAssignmentsToInline.Contains(parameterSymbol))
                 {
-                    // we're evaluating a parameter that has an external input function reference, so inline it
+                    // we've got a runtime dependency so we have to inline the parameter assignment
                     return ConvertWithoutLowering(parameterSymbol.DeclaringParameterAssignment.Value);
                 }
                 return new ParametersAssignmentReferenceExpression(variableAccessSyntax, parameterSymbol);
 
             case VariableSymbol variableSymbol:
-                if (Context.VariablesToInline.Contains(variableSymbol) ||
-                    Context.ExternalInputReferences.VariablesReferences.Contains(variableSymbol))
+                if (Context.SemanticModel.SymbolsToInline.VariablesToInline.Contains(variableSymbol))
                 {
-                    // we've got a runtime dependency, or we're evaluating a variable that has an external input function reference,
-                    // so we have to inline the variable usage
+                    // we've got a runtime dependency so we have to inline the variable usage
                     return ConvertWithoutLowering(variableSymbol.DeclaringVariable.Value);
                 }
 
@@ -1107,6 +1120,19 @@ public class ExpressionBuilder
 
             case ExtensionNamespaceSymbol extensionNamespaceSymbol:
                 return new ExtensionReferenceExpression(variableAccessSyntax, extensionNamespaceSymbol);
+
+            case ExtensionConfigAssignmentSymbol extensionConfigAssignmentSymbol:
+                return new ExtensionConfigAssignmentReferenceExpression(variableAccessSyntax, extensionConfigAssignmentSymbol);
+
+            case BaseParametersSymbol baseParamsSymbol:
+                var objectProperties = baseParamsSymbol.ParentAssignments
+                    .Select(pa => new ObjectPropertyExpression(
+                        pa.DeclaringParameterAssignment,
+                        new StringLiteralExpression(pa.DeclaringParameterAssignment.Name, pa.Name),
+                        ConvertWithoutLowering(pa.DeclaringParameterAssignment.Value)))
+                    .ToImmutableArray();
+
+                return new ObjectExpression(variableAccessSyntax, objectProperties);
 
             default:
                 throw new NotImplementedException($"Encountered an unexpected symbol kind '{symbol?.Kind}' and type '{symbol?.GetType().Name}' when generating a variable access expression.");
@@ -1565,7 +1591,7 @@ public class ExpressionBuilder
         {
             // emit the resource id of the resource being extended
             var indexContext = TryGetReplacementContext(scopeResource, resource.ScopeData.IndexExpression, resource.BodySyntax);
-            expressionEmitter.EmitProperty("scope", () => expressionEmitter.EmitUnqualifiedResourceId(scopeResource, indexContext));
+            expressionEmitter.EmitProperty("scope", () => expressionEmitter.EmitFullyQualifiedResourceId(scopeResource, indexContext));
             return;
         }
 
@@ -1634,10 +1660,8 @@ public class ExpressionBuilder
                     expressionEmitter.EmitProperty("resourceGroup", () => expressionEmitter.EmitExpression(scopeData.ResourceGroupProperty, indexContext));
                 }
                 return;
-            case ResourceScope.DesiredStateConfiguration:
             case ResourceScope.Local:
-                // These scopes just changes the schema so there are no properties to emit.
-                // We don't ever need to throw here because the feature is checked during scope validation.
+                // These scopes just change the schema so there are no properties to emit.
                 return;
             default:
                 throw new InvalidOperationException($"Cannot format resourceId for scope {scopeData.RequestedScope}");

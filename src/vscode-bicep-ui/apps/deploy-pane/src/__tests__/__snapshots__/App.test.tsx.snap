@@ -1,6 +1,18 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`App > handles synchronous deployment failures correctly 1`] = `
+.c0.c0.c0 {
+  width: 13px;
+  height: 13px;
+  font-size: 13px;
+}
+
+.c1.c1.c1 {
+  width: 12px;
+  height: 12px;
+  font-size: 12px;
+}
+
 <div>
   <main
     id="webview-body"
@@ -16,7 +28,7 @@ exports[`App > handles synchronous deployment failures correctly 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -94,7 +106,7 @@ exports[`App > handles synchronous deployment failures correctly 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -121,8 +133,6 @@ exports[`App > handles synchronous deployment failures correctly 1`] = `
             fooParam
           </vscode-label>
           <vscode-textfield
-            aria-invalid="false"
-            internals-valid=""
             type="text"
           />
         </span>
@@ -139,7 +149,7 @@ exports[`App > handles synchronous deployment failures correctly 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -187,7 +197,7 @@ exports[`App > handles synchronous deployment failures correctly 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -223,9 +233,10 @@ exports[`App > handles synchronous deployment failures correctly 1`] = `
                     style="vertical-align: middle;"
                     title="Open in Portal"
                   >
+                     
                     <div
                       aria-hidden="true"
-                      class="sc-gnOvAp jiyPEE codicon codicon-globe"
+                      class="c1 codicon codicon-globe"
                       data-testid="globe-codicon"
                     />
                   </a>
@@ -253,11 +264,8 @@ exports[`App > handles synchronous deployment failures correctly 1`] = `
           </vscode-table-body>
         </vscode-table>
         <vscode-checkbox
-          aria-checked="false"
           aria-invalid="false"
-          aria-label="Show JSON?"
           internals-valid=""
-          role="checkbox"
         >
           Show JSON?
         </vscode-checkbox>
@@ -290,6 +298,12 @@ exports[`App > handles synchronous deployment failures correctly 1`] = `
 `;
 
 exports[`App > renders the App component with deployment state 1`] = `
+.c0.c0.c0 {
+  width: 13px;
+  height: 13px;
+  font-size: 13px;
+}
+
 <div>
   <main
     id="webview-body"
@@ -305,7 +319,7 @@ exports[`App > renders the App component with deployment state 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -383,7 +397,7 @@ exports[`App > renders the App component with deployment state 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -410,8 +424,6 @@ exports[`App > renders the App component with deployment state 1`] = `
             fooParam
           </vscode-label>
           <vscode-textfield
-            aria-invalid="false"
-            internals-valid=""
             type="text"
           />
         </span>
@@ -428,7 +440,7 @@ exports[`App > renders the App component with deployment state 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -476,6 +488,18 @@ exports[`App > renders the loading spinner before initialization 1`] = `
 `;
 
 exports[`App > runs a deployment 1`] = `
+.c0.c0.c0 {
+  width: 13px;
+  height: 13px;
+  font-size: 13px;
+}
+
+.c1.c1.c1 {
+  width: 12px;
+  height: 12px;
+  font-size: 12px;
+}
+
 <div>
   <main
     id="webview-body"
@@ -491,7 +515,7 @@ exports[`App > runs a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -569,7 +593,7 @@ exports[`App > runs a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -596,8 +620,6 @@ exports[`App > runs a deployment 1`] = `
             fooParam
           </vscode-label>
           <vscode-textfield
-            aria-invalid="false"
-            internals-valid=""
             type="text"
           />
         </span>
@@ -614,7 +636,7 @@ exports[`App > runs a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -662,7 +684,7 @@ exports[`App > runs a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -698,9 +720,10 @@ exports[`App > runs a deployment 1`] = `
                     style="vertical-align: middle;"
                     title="Open in Portal"
                   >
+                     
                     <div
                       aria-hidden="true"
-                      class="sc-gnOvAp jiyPEE codicon codicon-globe"
+                      class="c1 codicon codicon-globe"
                       data-testid="globe-codicon"
                     />
                   </a>
@@ -740,7 +763,7 @@ exports[`App > runs a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -797,9 +820,10 @@ exports[`App > runs a deployment 1`] = `
                   style="vertical-align: middle;"
                   title="Open in Portal"
                 >
+                   
                   <div
                     aria-hidden="true"
-                    class="sc-gnOvAp jiyPEE codicon codicon-globe"
+                    class="c1 codicon codicon-globe"
                     data-testid="globe-codicon"
                   />
                 </a>
@@ -842,7 +866,7 @@ exports[`App > runs a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -899,6 +923,12 @@ exports[`App > runs a deployment 1`] = `
 `;
 
 exports[`App > supports the scope picker 1`] = `
+.c0.c0.c0 {
+  width: 13px;
+  height: 13px;
+  font-size: 13px;
+}
+
 <div>
   <main
     id="webview-body"
@@ -914,7 +944,7 @@ exports[`App > supports the scope picker 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -992,7 +1022,7 @@ exports[`App > supports the scope picker 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -1019,8 +1049,6 @@ exports[`App > supports the scope picker 1`] = `
             fooParam
           </vscode-label>
           <vscode-textfield
-            aria-invalid="false"
-            internals-valid=""
             type="text"
           />
         </span>
@@ -1037,7 +1065,7 @@ exports[`App > supports the scope picker 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -1079,6 +1107,12 @@ exports[`App > supports the scope picker 1`] = `
 `;
 
 exports[`App > validates a deployment 1`] = `
+.c0.c0.c0 {
+  width: 13px;
+  height: 13px;
+  font-size: 13px;
+}
+
 <div>
   <main
     id="webview-body"
@@ -1094,7 +1128,7 @@ exports[`App > validates a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -1172,7 +1206,7 @@ exports[`App > validates a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -1199,8 +1233,6 @@ exports[`App > validates a deployment 1`] = `
             fooParam
           </vscode-label>
           <vscode-textfield
-            aria-invalid="false"
-            internals-valid=""
             type="text"
           />
         </span>
@@ -1217,7 +1249,7 @@ exports[`App > validates a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -1265,7 +1297,7 @@ exports[`App > validates a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -1302,11 +1334,8 @@ exports[`App > validates a deployment 1`] = `
           </vscode-table-body>
         </vscode-table>
         <vscode-checkbox
-          aria-checked="false"
           aria-invalid="false"
-          aria-label="Show JSON?"
           internals-valid=""
-          role="checkbox"
         >
           Show JSON?
         </vscode-checkbox>
@@ -1353,6 +1382,12 @@ exports[`App > validates a deployment 1`] = `
 `;
 
 exports[`App > what-ifs a deployment 1`] = `
+.c0.c0.c0 {
+  width: 13px;
+  height: 13px;
+  font-size: 13px;
+}
+
 <div>
   <main
     id="webview-body"
@@ -1368,7 +1403,7 @@ exports[`App > what-ifs a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -1446,7 +1481,7 @@ exports[`App > what-ifs a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -1473,8 +1508,6 @@ exports[`App > what-ifs a deployment 1`] = `
             fooParam
           </vscode-label>
           <vscode-textfield
-            aria-invalid="false"
-            internals-valid=""
             type="text"
           />
         </span>
@@ -1491,7 +1524,7 @@ exports[`App > what-ifs a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -1539,7 +1572,7 @@ exports[`App > what-ifs a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>
@@ -1588,7 +1621,7 @@ exports[`App > what-ifs a deployment 1`] = `
       >
         <div
           aria-hidden="true"
-          class="sc-gnOvAp FKHEF codicon codicon-chevron-up"
+          class="c0 codicon codicon-chevron-up"
           data-testid="chevron-up-codicon"
         />
         <h3>

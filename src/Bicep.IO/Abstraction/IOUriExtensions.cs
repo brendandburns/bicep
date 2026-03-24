@@ -11,6 +11,21 @@ namespace Bicep.IO.Abstraction
 {
     public static class IOUriExtensions
     {
+        public static string GetFileName(this IOUri uri) => uri.PathSegments.LastOrDefault() ?? "";
+
+        public static ReadOnlySpan<char> GetFileNameWithoutExtension(this IOUri uri)
+        {
+            var fileName = uri.PathSegments.LastOrDefault() ?? "";
+            int lastDotIndex = GetExtensionStartIndex(fileName);
+
+            if (lastDotIndex == -1)
+            {
+                return fileName.AsSpan();
+            }
+
+            return fileName.AsSpan(0, lastDotIndex);
+        }
+
         public static ReadOnlySpan<char> GetExtension(this IOUri uri)
         {
             int lastDotIndex = GetExtensionStartIndex(uri.Path);
@@ -54,6 +69,8 @@ namespace Bicep.IO.Abstraction
 
             return actualExtension.Equals(extension, StringComparison.OrdinalIgnoreCase);
         }
+
+        public static IOUri WithPath(this IOUri uri, string path) => new(uri.Scheme, uri.Authority, path, uri.Query, uri.Fragment);
 
         private static int GetExtensionStartIndex(string path)
         {

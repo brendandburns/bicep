@@ -335,9 +335,15 @@ using './nested1/|'
         [DataTestMethod]
         public async Task Param_file_should_have_keyword_completions(string text)
         {
-            var completions = await RunCompletionScenario(text, ImmutableDictionary<DocumentUri, string>.Empty, '|');
+            var completions = await RunCompletionScenario(text, [], '|');
 
             completions.Should().SatisfyRespectively(
+                x =>
+                {
+                    x.Label.Should().Be("extends");
+                    x.Detail.Should().Be("Extends keyword");
+                    x.Kind.Should().Be(CompletionItemKind.Keyword);
+                },
                 x =>
                 {
                     x.Label.Should().Be("param");
@@ -360,9 +366,15 @@ using 'bar.bicep'
         [DataTestMethod]
         public async Task Using_completion_should_only_be_offered_once(string paramTextWithCursor)
         {
-            var completions = await RunCompletionScenario(paramTextWithCursor, ImmutableDictionary<DocumentUri, string>.Empty, '|');
+            var completions = await RunCompletionScenario(paramTextWithCursor, [], '|');
 
             completions.Should().SatisfyRespectively(
+                x =>
+                {
+                    x.Label.Should().Be("extends");
+                    x.Detail.Should().Be("Extends keyword");
+                    x.Kind.Should().Be(CompletionItemKind.Keyword);
+                },
                 x =>
                 {
                     x.Label.Should().Be("param");

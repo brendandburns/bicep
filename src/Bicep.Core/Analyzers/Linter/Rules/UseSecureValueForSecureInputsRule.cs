@@ -9,6 +9,7 @@ using Bicep.Core.Semantics.Metadata;
 using Bicep.Core.Syntax;
 using Bicep.Core.Syntax.Visitors;
 using Bicep.Core.TypeSystem;
+using Bicep.Core.TypeSystem.Providers;
 using Bicep.Core.TypeSystem.Types;
 
 namespace Bicep.Core.Analyzers.Linter.Rules;
@@ -20,8 +21,7 @@ public sealed class UseSecureValueForSecureInputsRule : LinterRuleBase
     public UseSecureValueForSecureInputsRule() : base(
         code: Code,
         description: CoreResources.UseSecureValueForSecureInputsRule_Description,
-        LinterRuleCategory.Security,
-        docUri: new Uri($"https://aka.ms/bicep/linter/{Code}"))
+        LinterRuleCategory.Security)
     {
     }
 
@@ -59,11 +59,17 @@ public sealed class UseSecureValueForSecureInputsRule : LinterRuleBase
 
     public override IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model, DiagnosticLevel diagnosticLevel)
     {
+        var resourceTypeResolver = ResourceTypeResolver.Create(model);
         foreach (var property in GetSecureObjectPropertiesFromTypeInformation(model))
         {
-            if (model.GetTypeInfo(property.Value) is { } type &&
-                type is not ErrorType &&
-                !type.ValidationFlags.HasFlag(TypeSymbolValidationFlags.IsSecure))
+            if (!IsDeployTimeConstant(property, model, resourceTypeResolver))
+            {
+                // Let's ignore the case where insecure runtime values are used - this is complicated due to lack of accurate type information.
+                // The main thing we are trying to block is hard-coded values, insecure parameters, and value calculated from these.
+                continue;
+            }
+
+            if (model.GetTypeInfo(property.Value) is { } type && IsPotentiallyInsecure(type))
             {
                 yield return CreateDiagnosticForSpan(
                     diagnosticLevel,
@@ -71,5 +77,23 @@ public sealed class UseSecureValueForSecureInputsRule : LinterRuleBase
                     [string.Join('.', property.TryGetKeyText() ?? string.Empty), type.Name]);
             }
         }
+    }
+
+    private static bool IsPotentiallyInsecure(TypeSymbol type)
+        => type switch
+        {
+            ErrorType => false,
+            NullType => false,
+            StringLiteralType { RawStringValue: "" } => false,
+            UnionType unionType => unionType.Members.Any(x => IsPotentiallyInsecure(x.Type)),
+            _ => !type.ValidationFlags.HasFlag(TypeSymbolValidationFlags.IsSecure),
+        };
+
+    private static bool IsDeployTimeConstant(ObjectPropertySyntax syntax, SemanticModel model, ResourceTypeResolver resolver)
+    {
+        var diagWriter = ToListDiagnosticWriter.Create();
+        DeployTimeConstantValidator.CheckDeployTimeConstantViolations(syntax, syntax.Value, model, diagWriter, resolver);
+
+        return diagWriter.GetDiagnostics().Count == 0;
     }
 }

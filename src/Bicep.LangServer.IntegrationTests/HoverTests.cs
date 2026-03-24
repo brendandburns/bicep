@@ -1145,6 +1145,89 @@ AzureMetrics
 """);
         }
 
+        [TestMethod]
+        public async Task Hovers_are_displayed_when_hovering_over_quoted_object_property_names()
+        {
+            // https://github.com/Azure/bicep/issues/18411
+            var (text, cursors) = ParserHelper.GetFileWithCursors("""
+                type foo = {
+                  @description('A string property')
+                  stringProp: string
+                  @description('An int property')
+                  intProp: int
+                }
+                param myParam foo = {
+                  'str|ingProp': 'hello'
+                  'intP|rop': 42
+                }
+                """, '|');
+
+            var bicepFile = new LanguageClientFile($"file:///{TestContext.TestName}-path/to/main.bicep", text);
+
+            var helper = await ServerWithBuiltInTypes.GetAsync();
+            await helper.OpenFileOnceAsync(TestContext, text, bicepFile.Uri);
+
+            var hovers = await RequestHovers(helper.Client, bicepFile, cursors);
+
+            hovers.Should().AllSatisfy(h => h.Should().NotBeNull());
+            hovers.Should().SatisfyRespectively(
+                h => h!.Contents.MarkupContent!.Value.Should().Contain("stringProp: string").And.Contain("A string property"),
+                h => h!.Contents.MarkupContent!.Value.Should().Contain("intProp: int").And.Contain("An int property")
+            );
+        }
+
+        [TestMethod]
+        public async Task Hovers_are_displayed_when_hovering_over_quoted_resource_property_names()
+        {
+            // https://github.com/Azure/bicep/issues/18411
+            var (text, cursors) = ParserHelper.GetFileWithCursors("""
+                resource storage 'Microsoft.Storage/storageAccounts@2021-02-01' = {
+                  'na|me': 'mystorageaccount'
+                  'loca|tion': 'eastus'
+                  'ki|nd': 'StorageV2'
+                  sku: {
+                    'na|me': 'Standard_LRS'
+                  }
+                }
+                """, '|');
+
+            var bicepFile = new LanguageClientFile($"file:///{TestContext.TestName}-path/to/main.bicep", text);
+
+            var helper = await ServerWithBuiltInTypes.GetAsync();
+            await helper.OpenFileOnceAsync(TestContext, text, bicepFile.Uri);
+
+            var hovers = await RequestHovers(helper.Client, bicepFile, cursors);
+
+            hovers.Should().AllSatisfy(h => h.Should().NotBeNull());
+        }
+
+        [TestMethod]
+        public async Task Hovers_are_displayed_when_hovering_over_quoted_type_property_names()
+        {
+            // https://github.com/Azure/bicep/issues/18411
+            var (text, cursors) = ParserHelper.GetFileWithCursors("""
+                type foo = {
+                  @description('A string property')
+                  'strin|gProp': string
+                  @description('An int property')
+                  'intP|rop': int
+                }
+                """, '|');
+
+            var bicepFile = new LanguageClientFile($"file:///{TestContext.TestName}-path/to/main.bicep", text);
+
+            var helper = await ServerWithBuiltInTypes.GetAsync();
+            await helper.OpenFileOnceAsync(TestContext, text, bicepFile.Uri);
+
+            var hovers = await RequestHovers(helper.Client, bicepFile, cursors);
+
+            hovers.Should().AllSatisfy(h => h.Should().NotBeNull());
+            hovers.Should().SatisfyRespectively(
+                h => h!.Contents.MarkupContent!.Value.Should().Contain("stringProp: string").And.Contain("A string property"),
+                h => h!.Contents.MarkupContent!.Value.Should().Contain("intProp: int").And.Contain("An int property")
+            );
+        }
+
         private string GetManifestFileContents(string? documentationUri, string? description)
         {
             string annotations =
@@ -1186,58 +1269,6 @@ AzureMetrics
 
             var multiFileLanguageServerHelper = await sharedLanguageHelperManager.GetAsync();
             return multiFileLanguageServerHelper;
-        }
-
-        private ICompilationManager GetBicepCompilationManager(DocumentUri documentUri, CompilationContext compilationContext)
-        {
-            var bicepCompilationManager = StrictMock.Of<ICompilationManager>();
-            bicepCompilationManager.Setup(m => m.GetCompilation(documentUri)).Returns(compilationContext);
-
-            return bicepCompilationManager.Object;
-        }
-
-        private IFeatureProviderFactory GetFeatureProviderFactory(Uri uri, string rootDirectoryPath)
-        {
-            var features = StrictMock.Of<IFeatureProvider>();
-            var rootDirectory = BicepTestConstants.FileExplorer.GetDirectory(IOUri.FromLocalFilePath(rootDirectoryPath));
-            features.Setup(m => m.CacheRootDirectory).Returns(rootDirectory);
-
-            var featureProviderFactory = StrictMock.Of<IFeatureProviderFactory>();
-            featureProviderFactory.Setup(m => m.GetFeatureProvider(uri)).Returns(features.Object);
-
-            return featureProviderFactory.Object;
-        }
-
-        private IModuleDispatcher GetModuleDispatcher(
-            BicepSourceFile parentModuleFile,
-            string manifestFileContents,
-            string testOutputPath,
-            string registry,
-            string repository,
-            string? digest,
-            string? tag)
-        {
-            var moduleDeclarationSyntax = parentModuleFile.ProgramSyntax.Declarations.OfType<ModuleDeclarationSyntax>().Single();
-
-            OciRegistryHelper.SaveManifestFileToModuleRegistryCache(
-                TestContext,
-                registry,
-                repository,
-                manifestFileContents,
-                testOutputPath,
-                digest,
-                tag);
-            ArtifactReference? ociArtifactModuleReference = OciRegistryHelper.CreateModuleReferenceMock(
-                parentModuleFile,
-                registry,
-                repository,
-                digest,
-                tag);
-
-            var moduleDispatcher = StrictMock.Of<IModuleDispatcher>();
-            moduleDispatcher.Setup(m => m.TryGetArtifactReference(parentModuleFile, moduleDeclarationSyntax)).Returns(ResultHelper.Create(ociArtifactModuleReference, null));
-
-            return moduleDispatcher.Object;
         }
 
         private static void ValidateHover(Hover? hover, Symbol symbol)

@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+
 using System.Collections.Immutable;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Extensions;
@@ -58,7 +59,9 @@ namespace Bicep.Core.TypeSystem
 
             FunctionCallSyntaxBase functionCallSyntaxBase => functionCallSyntaxBase.Arguments,
             FunctionDeclarationSyntax functionDeclaration => functionDeclaration.AsEnumerable(),
-            _ => throw new ArgumentOutOfRangeException(nameof(deployTimeConstantContainer), "Expected an ObjectPropertySyntax, an IfConditionSyntax, a ForSyntax, a FunctionCallSyntaxBase, or a FunctionDeclarationSyntax."),
+            FunctionArgumentSyntax functionArgument => functionArgument.AsEnumerable(),
+            ExtensionWithClauseSyntax extensionWithClause => (extensionWithClause.Config as ObjectSyntax)?.Properties ?? [],
+            _ => throw new ArgumentOutOfRangeException(nameof(deployTimeConstantContainer), $@"Unexpected syntax type '{deployTimeConstantContainer.GetType().Name}'.")
         };
 
 

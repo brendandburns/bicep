@@ -3,7 +3,17 @@
 
 import { registerAzureUtilsExtensionVariables } from "@microsoft/vscode-azext-azureutils";
 import { registerUIExtensionVariables } from "@microsoft/vscode-azext-utils";
-import { ExtensionContext, ProgressLocation, TextDocument, TextEditor, Uri, window, workspace } from "vscode";
+import {
+  ExtensionContext,
+  lm,
+  McpStdioServerDefinition,
+  ProgressLocation,
+  TextDocument,
+  TextEditor,
+  Uri,
+  window,
+  workspace,
+} from "vscode";
 import * as lsp from "vscode-languageclient/node";
 import { AzureUiManager } from "./azure/AzureUiManager";
 import { BuildCommand } from "./commands/build";
@@ -29,7 +39,12 @@ import { ShowVisualizerCommand, ShowVisualizerToSideCommand } from "./commands/s
 import { SuppressedWarningsManager } from "./commands/SuppressedWarningsManager";
 import * as surveys from "./feedback/surveys";
 import { setGlobalStateKeysToSyncBetweenMachines } from "./globalState";
-import { BicepExternalSourceContentProvider, createLanguageService, ensureDotnetRuntimeInstalled } from "./language";
+import {
+  BicepExternalSourceContentProvider,
+  createLanguageService,
+  ensureDotnetRuntimeInstalled,
+  ensureMcpServerExists,
+} from "./language";
 import { bicepConfigurationPrefix, bicepLanguageId } from "./language/constants";
 import { BicepExternalSourceScheme } from "./language/decodeExternalSourceUri";
 import { DeployPaneViewManager } from "./panes/deploy";
@@ -41,6 +56,7 @@ import { createLogger, getLogger, resetLogger } from "./utils/logger";
 import { OutputChannelManager } from "./utils/OutputChannelManager";
 import { activateWithTelemetryAndErrorHandling } from "./utils/telemetry";
 import { BicepVisualizerViewManager } from "./visualizer";
+import { VisualDesignerViewManager } from "./visualizer-v2";
 
 let languageClient: lsp.LanguageClient | null = null;
 
@@ -101,6 +117,7 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
         surveys.showSurveys(extensionContext.globalState);
 
         const viewManager = extension.register(new BicepVisualizerViewManager(extension.extensionUri, languageClient));
+        const viewManagerV2 = extension.register(new VisualDesignerViewManager(extension.extensionUri, languageClient));
 
         const outputChannelManager = extension.register(
           new OutputChannelManager("Bicep Operations", bicepConfigurationPrefix),
@@ -141,9 +158,9 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
             pasteAsBicepCommand,
             new ShowDeployPaneCommand(deployPaneViewManager),
             new ShowDeployPaneToSideCommand(deployPaneViewManager),
-            new ShowVisualizerCommand(viewManager),
-            new ShowVisualizerToSideCommand(viewManager),
-            new ShowSourceFromVisualizerCommand(viewManager),
+            new ShowVisualizerCommand(viewManager, viewManagerV2),
+            new ShowVisualizerToSideCommand(viewManager, viewManagerV2),
+            new ShowSourceFromVisualizerCommand(viewManager, viewManagerV2),
             new WalkthroughCopyToClipboardCommand(),
             new WalkthroughCreateBicepFileCommand(),
             new WalkthroughOpenBicepFileCommand(),
@@ -184,6 +201,15 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
 
         await languageClient.start();
         getLogger().info("Bicep language service started.");
+
+        extension.register(
+          lm.registerMcpServerDefinitionProvider("bicep", {
+            provideMcpServerDefinitions: async () => {
+              const mcpServerPath = await ensureMcpServerExists(extensionContext);
+              return [new McpStdioServerDefinition("Bicep", dotnetCommandPath, [mcpServerPath])];
+            },
+          }),
+        );
 
         // Set initial UI context
         await updateUiContext(window.activeTextEditor?.document);

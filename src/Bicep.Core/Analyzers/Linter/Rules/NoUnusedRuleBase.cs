@@ -14,8 +14,8 @@ namespace Bicep.Core.Analyzers.Linter.Rules;
 
 public abstract class NoUnusedRuleBase : LinterRuleBase
 {
-    protected NoUnusedRuleBase(string code, string description, DiagnosticStyling diagnosticStyling, Uri? docUri = null) :
-        base(code, description, LinterRuleCategory.BestPractice, docUri, diagnosticStyling)
+    protected NoUnusedRuleBase(string code, string description, DiagnosticStyling diagnosticStyling) :
+        base(code, description, LinterRuleCategory.BestPractice, diagnosticStyling)
     {
     }
 
@@ -23,6 +23,13 @@ public abstract class NoUnusedRuleBase : LinterRuleBase
     {
         var span = GetSpanForRow(programSyntax, declaringSyntax);
         var codeFix = new CodeFix(GetCodeFixDescription(name), true, CodeFixKind.QuickFix, new CodeReplacement(span, String.Empty));
+
+        return CreateFixableDiagnosticForSpan(diagnosticLevel, nameSpan, codeFix, name);
+    }
+
+    protected Diagnostic CreateRemoveUnusedDiagnosticForSpan(DiagnosticLevel diagnosticLevel, string name, TextSpan nameSpan, TextSpan codeFixSpan)
+    {
+        var codeFix = new CodeFix(GetCodeFixDescription(name), true, CodeFixKind.QuickFix, new CodeReplacement(codeFixSpan, String.Empty));
 
         return CreateFixableDiagnosticForSpan(diagnosticLevel, nameSpan, codeFix, name);
     }

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "dev",
-      "templateHash": "250853418754530153"
+      "templateHash": "17570527802199842537"
     }
   },
   "parameters": {
@@ -88,7 +88,7 @@
         "count": "[length(parameters('sqlLogicalServers'))]"
       },
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2022-09-01",
+      "apiVersion": "2025-04-01",
       "name": "[format('sqlLogicalServer-{0}', copyIndex())]",
       "properties": {
         "expressionEvaluationOptions": {
@@ -119,7 +119,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "16716795212938447812"
+              "templateHash": "6127464773493944112"
             }
           },
           "parameters": {
@@ -333,7 +333,7 @@
               "condition": "[parameters('sqlLogicalServer').diagnosticLogsAndMetrics.auditLogs]",
               "type": "microsoft.insights/diagnosticSettings",
               "apiVersion": "2017-05-01-preview",
-              "scope": "[format('Microsoft.Sql/servers/{0}/databases/{1}', parameters('sqlLogicalServer').name, 'master')]",
+              "scope": "[resourceId('Microsoft.Sql/servers/databases', parameters('sqlLogicalServer').name, 'master')]",
               "name": "SQLSecurityAuditEvents_3d229c42-c7e7-4c97-9a99-ec0d0d8b86c1",
               "properties": {
                 "workspaceId": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', parameters('sqlLogicalServer').diagnosticLogsAndMetrics.subscriptionId, parameters('sqlLogicalServer').diagnosticLogsAndMetrics.resourceGroupName), 'Microsoft.OperationalInsights/workspaces', parameters('sqlLogicalServer').diagnosticLogsAndMetrics.name)]",
@@ -359,7 +359,7 @@
               "condition": "[not(empty(parameters('sqlLogicalServer').diagnosticLogsAndMetrics.name))]",
               "type": "microsoft.insights/diagnosticSettings",
               "apiVersion": "2017-05-01-preview",
-              "scope": "[format('Microsoft.Sql/servers/{0}/databases/{1}', parameters('sqlLogicalServer').name, 'master')]",
+              "scope": "[resourceId('Microsoft.Sql/servers/databases', parameters('sqlLogicalServer').name, 'master')]",
               "name": "sendLogsAndMetrics",
               "properties": {
                 "copy": [
@@ -386,7 +386,7 @@
                 "count": "[length(parameters('sqlLogicalServer').firewallRules)]"
               },
               "type": "Microsoft.Resources/deployments",
-              "apiVersion": "2022-09-01",
+              "apiVersion": "2025-04-01",
               "name": "[format('sqlFirewallRule-{0}-{1}', uniqueString(parameters('sqlLogicalServer').name), copyIndex())]",
               "properties": {
                 "expressionEvaluationOptions": {
@@ -449,7 +449,7 @@
                 "count": "[length(parameters('sqlLogicalServer').databases)]"
               },
               "type": "Microsoft.Resources/deployments",
-              "apiVersion": "2022-09-01",
+              "apiVersion": "2025-04-01",
               "name": "[format('sqlDb-{0}-{1}', uniqueString(parameters('sqlLogicalServer').name), copyIndex())]",
               "properties": {
                 "expressionEvaluationOptions": {
@@ -475,7 +475,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "dev",
-                      "templateHash": "11469233179948538129"
+                      "templateHash": "2992718586342086485"
                     }
                   },
                   "parameters": {
@@ -587,7 +587,7 @@
                       "condition": "[parameters('sqlDatabase').diagnosticLogsAndMetrics.auditLogs]",
                       "type": "microsoft.insights/diagnosticSettings",
                       "apiVersion": "2017-05-01-preview",
-                      "scope": "[format('Microsoft.Sql/servers/{0}/databases/{1}', split(format('{0}/{1}', parameters('sqlServerName'), parameters('sqlDatabase').name), '/')[0], split(format('{0}/{1}', parameters('sqlServerName'), parameters('sqlDatabase').name), '/')[1])]",
+                      "scope": "[resourceId('Microsoft.Sql/servers/databases', split(format('{0}/{1}', parameters('sqlServerName'), parameters('sqlDatabase').name), '/')[0], split(format('{0}/{1}', parameters('sqlServerName'), parameters('sqlDatabase').name), '/')[1])]",
                       "name": "SQLSecurityAuditEvents_3d229c42-c7e7-4c97-9a99-ec0d0d8b86c1",
                       "properties": {
                         "workspaceId": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', parameters('sqlDatabase').diagnosticLogsAndMetrics.subscriptionId, parameters('sqlDatabase').diagnosticLogsAndMetrics.resourceGroupName), 'Microsoft.OperationalInsights/workspaces', parameters('sqlDatabase').diagnosticLogsAndMetrics.name)]",
@@ -608,7 +608,7 @@
                       "condition": "[not(empty(parameters('sqlDatabase').diagnosticLogsAndMetrics.name))]",
                       "type": "microsoft.insights/diagnosticSettings",
                       "apiVersion": "2017-05-01-preview",
-                      "scope": "[format('Microsoft.Sql/servers/{0}/databases/{1}', split(format('{0}/{1}', parameters('sqlServerName'), parameters('sqlDatabase').name), '/')[0], split(format('{0}/{1}', parameters('sqlServerName'), parameters('sqlDatabase').name), '/')[1])]",
+                      "scope": "[resourceId('Microsoft.Sql/servers/databases', split(format('{0}/{1}', parameters('sqlServerName'), parameters('sqlDatabase').name), '/')[0], split(format('{0}/{1}', parameters('sqlServerName'), parameters('sqlDatabase').name), '/')[1])]",
                       "name": "sendLogsAndMetrics",
                       "properties": {
                         "copy": [
@@ -631,7 +631,7 @@
                     "shortTermBackup": {
                       "condition": "[not(equals(parameters('sqlDatabase').shortTermBackupRetention, 0))]",
                       "type": "Microsoft.Resources/deployments",
-                      "apiVersion": "2022-09-01",
+                      "apiVersion": "2025-04-01",
                       "name": "[format('shortTermBackup-{0}', uniqueString(parameters('sqlServerName'), parameters('sqlDatabase').name))]",
                       "properties": {
                         "expressionEvaluationOptions": {
@@ -684,7 +684,7 @@
                     },
                     "azureDefender": {
                       "type": "Microsoft.Resources/deployments",
-                      "apiVersion": "2022-09-01",
+                      "apiVersion": "2025-04-01",
                       "name": "[format('azureDefender-{0}', uniqueString(parameters('sqlServerName'), parameters('sqlDatabase').name))]",
                       "properties": {
                         "expressionEvaluationOptions": {
@@ -740,7 +740,7 @@
                     },
                     "auditSettings": {
                       "type": "Microsoft.Resources/deployments",
-                      "apiVersion": "2022-09-01",
+                      "apiVersion": "2025-04-01",
                       "name": "[format('auditSettings-{0}', uniqueString(parameters('sqlServerName'), parameters('sqlDatabase').name))]",
                       "properties": {
                         "expressionEvaluationOptions": {
